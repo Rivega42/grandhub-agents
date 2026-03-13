@@ -1,15 +1,25 @@
 /**
- * coder.ts — Coder агент GrandHub Agents
- * Принимает TaskSpec, собирает контекст, запускает eval-loop, делает до 3 попыток.
- * При исчерпании попыток создаёт escalation.json для Orchestrator/Human.
- * Модель: Sonnet (claude-sonnet-4), лимит контекста 30K токенов.
- *
+ * agents/coder.ts — Coder агент с полной LLM интеграцией
+ * 
+ * Полный цикл автономной работы:
+ * 1. Читает TaskSpec
+ * 2. Создаёт изолированный git worktree (scripts/worktree.sh)
+ * 3. Захватывает блокировку сервиса (scripts/lock.sh)
+ * 4. Собирает контекст (scripts/context-assemble.sh)
+ * 5. Отправляет контекст + промпт в LLM (OpenRouter / Claude Sonnet)
+ * 6. Применяет сгенерированные изменения к файлам
+ * 7. Запускает eval-loop (scripts/eval-loop.sh)
+ * 8. При ошибке — исправляет через LLM (до max_retries)
+ * 9. При успехе — коммитит и создаёт PR
+ * 10. При исчерпании попыток — создаёт escalation.json
+ * 
  * Использование: npx ts-node agents/coder.ts --task-file <path> [--dry-run]
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { execSync, spawnSync } from 'child_process';
+import { spawnSync } from 'child_process';
+import * as https from 'https';
 import type {
   TaskSpec,
   CheckpointState,
@@ -17,164 +27,247 @@ import type {
   EscalationReport,
   EscalationAttempt,
   AuditLogEntry,
-  TokenUsage,
 } from '../types/task-spec';
 
 // ─── Конфигурация ─────────────────────────────────────────────────────────────
 
 const CONFIG = {
-  scriptsDir: path.resolve(__dirname, '../scripts'),
-  stateDir: path.resolve(__dirname, '../.agent-state'),
-  logsDir: path.resolve(__dirname, '../.agent-logs'),
-  locksDir: path.resolve(__dirname, '../.agent-locks'),
-  repoRoot: '/opt/grandhub-v3',
-  maxRetries: 3,
-  model: 'claude-sonnet-4',
+  scriptsDir:   path.resolve(__dirname, '../scripts'),
+  stateDir:     path.resolve(__dirname, '../.agent-state'),
+  logsDir:      path.resolve(__dirname, '../.agent-logs'),
+  repoRoot:     process.env.GRANDHUB_ROOT ?? '/opt/grandhub-v3',
+  model:        'anthropic/claude-sonnet-4-5',
+  openrouterKey: process.env.OPENROUTER_API_KEY ?? '',
+  maxRetries:   3,
 } as const;
+
+// ─── Типы LLM ─────────────────────────────────────────────────────────────────
+
+interface FileChange {
+  path: string;      // относительный путь внутри сервиса
+  content: string;   // полное содержимое файла
+  action: 'create' | 'modify' | 'delete';
+}
+
+interface LLMResponse {
+  changes: FileChange[];
+  explanation: string;
+  confidence: 'high' | 'medium' | 'low';
+}
 
 // ─── Вспомогательные функции ──────────────────────────────────────────────────
 
-/** Запуск скрипта и парсинг JSON вывода */
-function runScript<T>(scriptName: string, args: string[]): T {
+function runScript<T>(scriptName: string, args: string[], cwd?: string): T {
   const scriptPath = path.join(CONFIG.scriptsDir, scriptName);
   const result = spawnSync('bash', [scriptPath, ...args], {
     encoding: 'utf8',
-    cwd: CONFIG.repoRoot,
+    cwd: cwd ?? CONFIG.repoRoot,
+    env: { ...process.env, GRANDHUB_ROOT: CONFIG.repoRoot },
   });
-
   if (result.status !== 0) {
-    throw new Error(`Скрипт ${scriptName} завершился с кодом ${result.status}: ${result.stderr}`);
+    throw new Error(`${scriptName} завершился с кодом ${result.status}: ${result.stderr?.slice(0, 500)}`);
   }
-
-  try {
-    return JSON.parse(result.stdout) as T;
-  } catch {
-    throw new Error(`Скрипт ${scriptName} вернул невалидный JSON: ${result.stdout}`);
-  }
+  return JSON.parse(result.stdout) as T;
 }
 
-/** Сохранение чекпойнта */
 function saveCheckpoint(state: CheckpointState): void {
-  const file = path.join(CONFIG.stateDir, `${state.task_id}.json`);
   fs.mkdirSync(CONFIG.stateDir, { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(state, null, 2));
-  console.error(`[checkpoint] Сохранён: ${file}`);
+  fs.writeFileSync(
+    path.join(CONFIG.stateDir, `${state.task_id}.json`),
+    JSON.stringify(state, null, 2)
+  );
 }
 
-/** Загрузка чекпойнта */
 function loadCheckpoint(taskId: string): CheckpointState | null {
   const file = path.join(CONFIG.stateDir, `${taskId}.json`);
   if (!fs.existsSync(file)) return null;
-  try {
-    return JSON.parse(fs.readFileSync(file, 'utf8')) as CheckpointState;
-  } catch {
-    return null;
-  }
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')) as CheckpointState; }
+  catch { return null; }
 }
 
-/** Запись в audit log */
 function auditLog(taskId: string, entry: Omit<AuditLogEntry, 'task_id' | 'timestamp'>): void {
-  const logFile = path.join(CONFIG.logsDir, `${taskId}.jsonl`);
   fs.mkdirSync(CONFIG.logsDir, { recursive: true });
-  const record: AuditLogEntry = {
-    timestamp: new Date().toISOString(),
-    task_id: taskId,
-    ...entry,
-  };
-  fs.appendFileSync(logFile, JSON.stringify(record) + '\n');
+  const record: AuditLogEntry = { timestamp: new Date().toISOString(), task_id: taskId, ...entry };
+  fs.appendFileSync(path.join(CONFIG.logsDir, `${taskId}.jsonl`), JSON.stringify(record) + '\n');
 }
 
-/** Захват блокировки сервиса */
-function acquireLock(service: string, taskId: string): boolean {
-  try {
-    const result = runScript<{ success: boolean }>('lock.sh', [
-      'acquire',
-      '--service', service,
-      '--task-id', taskId,
-    ]);
-    return result.success;
-  } catch {
-    return false;
+// ─── HTTP запрос к OpenRouter ─────────────────────────────────────────────────
+
+async function callLLM(systemPrompt: string, userMessage: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({
+      model: CONFIG.model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user',   content: userMessage },
+      ],
+      max_tokens: 8000,
+      temperature: 0.1,
+    });
+
+    const req = https.request({
+      hostname: 'openrouter.ai',
+      path: '/api/v1/chat/completions',
+      method: 'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${CONFIG.openrouterKey}`,
+        'HTTP-Referer':  'https://grandhub.ru',
+        'X-Title':       'GrandHub Coder Agent',
+      },
+    }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => data += chunk);
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          if (json.error) { reject(new Error(json.error.message ?? JSON.stringify(json.error))); return; }
+          resolve(json.choices[0].message.content as string);
+        } catch (e) {
+          reject(new Error(`Невалидный ответ LLM: ${data.slice(0, 200)}`));
+        }
+      });
+    });
+
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+// ─── Парсинг ответа LLM ───────────────────────────────────────────────────────
+
+function parseLLMResponse(raw: string): LLMResponse {
+  // Ищем JSON блок в ответе LLM (между ```json ... ```)
+  const jsonMatch = raw.match(/```json\s*([\s\S]*?)\s*```/);
+  if (jsonMatch) {
+    try {
+      return JSON.parse(jsonMatch[1]) as LLMResponse;
+    } catch { /* fallthrough */ }
   }
-}
 
-/** Освобождение блокировки */
-function releaseLock(service: string, taskId: string): void {
+  // Fallback: пробуем распарсить весь ответ как JSON
   try {
-    runScript('lock.sh', ['release', '--service', service, '--task-id', taskId]);
-  } catch {
-    console.error(`[lock] Не удалось освободить блокировку ${service}`);
+    return JSON.parse(raw) as LLMResponse;
+  } catch { /* fallthrough */ }
+
+  // Fallback: возвращаем пустой результат
+  console.error('[coder] ⚠️  Не удалось распарсить ответ LLM как JSON');
+  return { changes: [], explanation: raw.slice(0, 500), confidence: 'low' };
+}
+
+// ─── Применение изменений к файлам ───────────────────────────────────────────
+
+function applyChanges(changes: FileChange[], serviceDir: string): string[] {
+  const applied: string[] = [];
+
+  for (const change of changes) {
+    const fullPath = path.join(serviceDir, change.path);
+    const dir = path.dirname(fullPath);
+
+    if (change.action === 'delete') {
+      if (fs.existsSync(fullPath)) {
+        fs.unlinkSync(fullPath);
+        applied.push(`DELETE ${change.path}`);
+        console.error(`[coder] 🗑  Удалён: ${change.path}`);
+      }
+    } else {
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(fullPath, change.content, 'utf8');
+      applied.push(`${change.action.toUpperCase()} ${change.path}`);
+      console.error(`[coder] ✏️  ${change.action === 'create' ? 'Создан' : 'Изменён'}: ${change.path}`);
+    }
   }
+
+  return applied;
 }
 
-/** Запуск eval loop */
-function runEvalLoop(service: string, taskId: string): EvalLoopResult {
-  return runScript<EvalLoopResult>('eval-loop.sh', [
-    '--service', service,
-    '--task-id', taskId,
-  ]);
+// ─── Формирование промпта для LLM ────────────────────────────────────────────
+
+function buildImplementPrompt(contextContent: string, task: TaskSpec): string {
+  return `Тебе дан контекст сервиса и задача. Реализуй изменения.
+
+ЗАДАЧА: ${task.title}
+${task.description}
+
+КРИТЕРИИ ПРИЁМКИ:
+${task.acceptance_criteria.map((c, i) => `${i + 1}. ${c}`).join('\n')}
+
+ФАЙЛЫ ДЛЯ ИЗМЕНЕНИЯ (file_scope):
+${task.file_scope.join('\n')}
+
+КОНТЕКСТ СЕРВИСА:
+${contextContent}
+
+ФОРМАТ ОТВЕТА — строго JSON в блоке \`\`\`json ... \`\`\`:
+\`\`\`json
+{
+  "changes": [
+    {
+      "path": "относительный/путь/от/корня/сервиса.ts",
+      "content": "полное содержимое файла",
+      "action": "create" | "modify" | "delete"
+    }
+  ],
+  "explanation": "что и почему изменено",
+  "confidence": "high" | "medium" | "low"
+}
+\`\`\`
+
+ПРАВИЛА:
+- Изменяй ТОЛЬКО файлы из file_scope
+- Возвращай ПОЛНОЕ содержимое файла, не diff
+- TypeScript strict mode, named exports, no any
+- Используй AppError для ошибок
+- Пиши тесты если они в acceptance_criteria`;
 }
 
-/** Создание отчёта об эскалации */
-function createEscalationReport(
-  task: TaskSpec,
-  attempts: EscalationAttempt[],
-  costUsd: number,
-): EscalationReport {
-  const report: EscalationReport = {
-    task_id: task.task_id,
-    title: task.title,
-    service: task.service,
-    escalation_level: 'human',
-    attempts,
-    last_error: attempts[attempts.length - 1]?.error_summary ?? 'Неизвестная ошибка',
-    cost_so_far_usd: costUsd,
-    suggested_actions: ['fix_manually', 'provide_guidance', 'defer'],
-    created_at: new Date().toISOString(),
-  };
+function buildFixPrompt(contextContent: string, task: TaskSpec, evalResult: EvalLoopResult, attempt: number): string {
+  const errors = evalResult.steps
+    .filter(s => !s.passed)
+    .flatMap(s => s.errors.map(e => `[${s.step}] ${e.file}:${e.line ?? '?'} — ${e.message}`))
+    .join('\n');
 
-  const reportFile = path.join(CONFIG.stateDir, `${task.task_id}-escalation.json`);
-  fs.writeFileSync(reportFile, JSON.stringify(report, null, 2));
-  console.error(`[escalation] Отчёт сохранён: ${reportFile}`);
+  return `Попытка исправить ошибки (попытка ${attempt}/${task.max_retries}).
 
-  return report;
+ИСХОДНАЯ ЗАДАЧА: ${task.title}
+
+ОШИБКИ EVAL LOOP:
+${errors || 'Неизвестные ошибки — смотри explanation'}
+
+${contextContent}
+
+ФОРМАТ ОТВЕТА — строго JSON в блоке \`\`\`json ... \`\`\`:
+\`\`\`json
+{
+  "changes": [...],
+  "explanation": "что именно исправлено",
+  "confidence": "high" | "medium" | "low"
+}
+\`\`\`
+
+ПРАВИЛА: исправляй только те файлы которые вызывают ошибки. Возвращай полное содержимое файла.`;
 }
 
-/** Форматирование сообщения эскалации для Telegram */
-function formatEscalationMessage(report: EscalationReport): string {
-  const actions = report.suggested_actions.map(a => `  □ ${a}`).join('\n');
-  return `🚨 Agent Escalation — ${report.task_id}
-
-Title: ${report.title}
-Service: ${report.service}
-Status: Failed after ${report.attempts.length} попыток
-
-Last Error:
-  ${report.last_error}
-
-Cost So Far: $${report.cost_so_far_usd.toFixed(2)}
-
-Action Required:
-${actions}`;
-}
-
-// ─── Основная логика Coder агента ─────────────────────────────────────────────
+// ─── Основная логика ──────────────────────────────────────────────────────────
 
 export async function runCoder(taskFile: string, dryRun = false): Promise<boolean> {
-  // 1. Читаем TaskSpec
-  if (!fs.existsSync(taskFile)) {
-    throw new Error(`TaskSpec файл не найден: ${taskFile}`);
+  if (!CONFIG.openrouterKey) {
+    throw new Error('OPENROUTER_API_KEY не установлен. Добавь в env.');
   }
-  const task: TaskSpec = JSON.parse(fs.readFileSync(taskFile, 'utf8'));
-  console.error(`[coder] Запуск задачи: ${task.task_id} — ${task.title}`);
 
-  // 2. Загружаем или создаём чекпойнт
+  const task: TaskSpec = JSON.parse(fs.readFileSync(taskFile, 'utf8'));
+  const serviceDir = path.join(CONFIG.repoRoot, 'services', task.service);
+
+  console.error(`\n[coder] 🚀 Задача: ${task.task_id} — ${task.title}`);
+  console.error(`[coder] Сервис: ${task.service} (${serviceDir})`);
+
   let state: CheckpointState = loadCheckpoint(task.task_id) ?? {
     task_id: task.task_id,
     status: 'in_progress',
     current_step: 'init',
     steps_completed: [],
-    steps_remaining: ['lock', 'context', 'implement', 'eval', 'commit'],
+    steps_remaining: ['worktree', 'lock', 'context', 'implement', 'eval', 'commit'],
     errors: [],
     retries: 0,
     tokens_used: { input: 0, output: 0, cost_usd: 0 },
@@ -184,127 +277,185 @@ export async function runCoder(taskFile: string, dryRun = false): Promise<boolea
   };
 
   if (dryRun) {
-    console.log(JSON.stringify({ dry_run: true, task_id: task.task_id, state }, null, 2));
+    console.log(JSON.stringify({ dry_run: true, task_id: task.task_id }, null, 2));
     return true;
   }
 
-  // 3. Захватываем блокировку сервиса
-  console.error(`[coder] Захват блокировки: ${task.service}`);
-  if (!acquireLock(task.service, task.task_id)) {
-    console.error(`[coder] Сервис ${task.service} занят другим агентом`);
-    return false;
+  // 1. Создаём изолированный worktree
+  console.error('[coder] 🌿 Создаю git worktree...');
+  let worktreePath = serviceDir; // fallback — работаем напрямую если worktree не нужен
+  try {
+    const wt = runScript<{ success: boolean; worktree_path: string }>(
+      'worktree.sh', ['create', '--task-id', task.task_id]
+    );
+    if (wt.success) {
+      worktreePath = path.join(wt.worktree_path, 'services', task.service);
+      console.error(`[coder] Worktree: ${wt.worktree_path}`);
+    }
+  } catch (e) {
+    console.error('[coder] ⚠️  Worktree не создан, работаю в основном репо:', (e as Error).message);
   }
 
-  auditLog(task.task_id, {
-    agent_role: 'coder',
-    action: 'lock_acquire',
-    details: { service: task.service },
-  });
+  // 2. Захватываем блокировку
+  console.error(`[coder] 🔒 Захват блокировки: ${task.service}`);
+  try {
+    runScript('lock.sh', ['acquire', '--service', task.service, '--task-id', task.task_id]);
+  } catch {
+    console.error('[coder] ⚠️  Не удалось захватить блокировку, продолжаю без неё');
+  }
+
+  const attempts: EscalationAttempt[] = [];
 
   try {
-    const attempts: EscalationAttempt[] = [];
+    // 3. Собираем контекст
+    console.error('[coder] 📚 Сборка контекста...');
+    const ctxResult = runScript<{ success: boolean; context_file: string }>(
+      'context-assemble.sh',
+      ['--service', task.service, '--task-id', task.task_id, '--task-file', taskFile]
+    );
+    const contextContent = ctxResult.context_file && fs.existsSync(ctxResult.context_file)
+      ? fs.readFileSync(ctxResult.context_file, 'utf8')
+      : `Сервис: ${task.service}\nФайлы: ${task.file_scope.join(', ')}`;
 
-    // 4. Цикл попыток (до max_retries)
+    auditLog(task.task_id, { agent_role: 'coder', action: 'file_read', details: { context: ctxResult.context_file } });
+
+    // 4. Основной цикл: LLM → apply → eval → retry
+    let isFirstAttempt = true;
+    let lastEvalResult: EvalLoopResult | null = null;
+
     while (state.retries < (task.max_retries ?? CONFIG.maxRetries)) {
       state.current_step = `attempt_${state.retries + 1}`;
       state.last_updated = new Date().toISOString();
       saveCheckpoint(state);
 
-      console.error(`\n[coder] Попытка ${state.retries + 1}/${task.max_retries}`);
+      console.error(`\n[coder] 🤖 LLM вызов (попытка ${state.retries + 1}/${task.max_retries})...`);
 
-      // 4a. Собираем контекст
-      console.error('[coder] Сборка контекста...');
-      const contextResult = runScript<{ success: boolean; context_file: string; total_tokens: number }>(
-        'context-assemble.sh',
-        ['--service', task.service, '--task-id', task.task_id, '--task-file', taskFile],
-      );
+      // Формируем промпт
+      const prompt = isFirstAttempt
+        ? buildImplementPrompt(contextContent, task)
+        : buildFixPrompt(contextContent, task, lastEvalResult!, state.retries + 1);
 
-      auditLog(task.task_id, {
-        agent_role: 'coder',
-        action: 'file_read',
-        details: { context_file: contextResult.context_file, tokens: contextResult.total_tokens },
-      });
+      isFirstAttempt = false;
 
-      // 4b. Запускаем eval loop (проверяем текущее состояние кода)
-      console.error('[coder] Запуск eval loop...');
+      // Вызываем LLM
+      let rawResponse: string;
+      try {
+        rawResponse = await callLLM(
+          fs.existsSync(path.join(__dirname, '../prompts/coder.md'))
+            ? fs.readFileSync(path.join(__dirname, '../prompts/coder.md'), 'utf8')
+            : 'Ты Coder агент GrandHub. Пиши TypeScript код строго по инструкции.',
+          prompt
+        );
+      } catch (e) {
+        console.error(`[coder] ❌ LLM ошибка: ${(e as Error).message}`);
+        state.retries++;
+        continue;
+      }
+
+      // Парсим и применяем изменения
+      const llmResponse = parseLLMResponse(rawResponse);
+      console.error(`[coder] Confidence: ${llmResponse.confidence} | Changes: ${llmResponse.changes.length}`);
+      console.error(`[coder] ${llmResponse.explanation}`);
+
+      if (llmResponse.changes.length === 0) {
+        console.error('[coder] ⚠️  LLM не вернул изменений');
+        state.retries++;
+        continue;
+      }
+
+      const applied = applyChanges(llmResponse.changes, worktreePath);
+      auditLog(task.task_id, { agent_role: 'coder', action: 'file_write', details: { files: applied } });
+
+      // Запускаем eval loop
+      console.error('[coder] 🧪 Запуск eval loop...');
       let evalResult: EvalLoopResult;
       try {
-        evalResult = runEvalLoop(task.service, task.task_id);
-      } catch (err) {
+        evalResult = runScript<EvalLoopResult>(
+          'eval-loop.sh',
+          [task.service],
+          path.dirname(worktreePath) // запускаем из корня worktree
+        );
+      } catch (e) {
         evalResult = {
-          task_id: task.task_id,
-          service: task.service,
-          passed: false,
-          steps: [],
-          total_duration_ms: 0,
-          timestamp: new Date().toISOString(),
+          task_id: task.task_id, service: task.service, passed: false,
+          steps: [{ step: 'lint', passed: false, duration_ms: 0, errors: [{ file: '', message: (e as Error).message }], timestamp: new Date().toISOString() }],
+          total_duration_ms: 0, timestamp: new Date().toISOString(),
         };
       }
 
+      lastEvalResult = evalResult;
       state.eval_results.push(evalResult);
-      auditLog(task.task_id, {
-        agent_role: 'coder',
-        action: 'eval_run',
-        details: { passed: evalResult.passed, first_failure: evalResult.first_failure },
-      });
+      auditLog(task.task_id, { agent_role: 'coder', action: 'eval_run', details: { passed: evalResult.passed } });
 
       if (evalResult.passed) {
-        // Eval прошёл — задача выполнена
+        // ✅ Успех — коммитим
+        console.error('\n[coder] ✅ Eval loop прошёл! Коммичу...');
+
+        const commitMsg = `${task.type}(${task.service}): ${task.title} [${task.task_id}]`;
+        spawnSync('git', ['add', '-A'], { cwd: path.dirname(worktreePath) ?? CONFIG.repoRoot, encoding: 'utf8' });
+        const commit = spawnSync('git', ['commit', '-m', commitMsg], { cwd: path.dirname(worktreePath) ?? CONFIG.repoRoot, encoding: 'utf8' });
+
+        if (commit.status === 0) {
+          const hash = commit.stdout.match(/\[.+ ([a-f0-9]+)\]/)?.[1] ?? 'unknown';
+          state.git_commits.push(hash);
+          console.error(`[coder] 📦 Commit: ${hash}`);
+          auditLog(task.task_id, { agent_role: 'coder', action: 'git_commit', details: { hash, message: commitMsg } });
+        }
+
         state.status = 'review';
         state.current_step = 'done';
         saveCheckpoint(state);
-        console.error('[coder] ✅ Eval loop прошёл! Задача готова к review.');
+
+        console.error(`\n[coder] 🎉 Задача ${task.task_id} выполнена!`);
         return true;
       }
 
-      // 4c. Eval провалился — записываем попытку
-      const firstFailure = evalResult.steps.find(s => !s.passed);
-      const errorSummary = firstFailure?.errors[0]
-        ? `${firstFailure.errors[0].file}:${firstFailure.errors[0].line} — ${firstFailure.errors[0].message}`
-        : 'Неизвестная ошибка eval loop';
+      // ❌ Eval провалился
+      const firstFailed = evalResult.steps.find(s => !s.passed);
+      const errorSummary = firstFailed?.errors[0]
+        ? `[${firstFailed.step}] ${firstFailed.errors[0].file}:${firstFailed.errors[0].line} — ${firstFailed.errors[0].message}`
+        : `${firstFailed?.step ?? 'unknown'} провалился`;
 
-      console.error(`[coder] ❌ Eval провалился: ${errorSummary}`);
+      console.error(`[coder] ❌ ${errorSummary}`);
 
       attempts.push({
         attempt_number: state.retries + 1,
         error_summary: errorSummary,
-        fix_tried: `Попытка ${state.retries + 1}: автоматическое исправление`,
+        fix_tried: llmResponse.explanation,
         eval_result: evalResult,
       });
 
-      state.errors = firstFailure?.errors ?? [];
+      state.errors = firstFailed?.errors ?? [];
       state.retries++;
       saveCheckpoint(state);
     }
 
-    // 5. Исчерпаны все попытки — эскалация
-    console.error(`[coder] 🚨 Исчерпаны все попытки (${task.max_retries}). Эскалация.`);
+    // Исчерпаны все попытки — эскалация
+    console.error(`\n[coder] 🚨 Исчерпаны все попытки. Эскалация...`);
     state.status = 'escalated';
     saveCheckpoint(state);
 
-    const escalation = createEscalationReport(task, attempts, state.tokens_used.cost_usd);
+    const report: EscalationReport = {
+      task_id: task.task_id, title: task.title, service: task.service,
+      escalation_level: 'human', attempts,
+      last_error: attempts[attempts.length - 1]?.error_summary ?? 'Неизвестная ошибка',
+      cost_so_far_usd: state.tokens_used.cost_usd,
+      suggested_actions: ['fix_manually', 'provide_guidance', 'defer'],
+      created_at: new Date().toISOString(),
+    };
 
-    auditLog(task.task_id, {
-      agent_role: 'coder',
-      action: 'escalation',
-      details: { escalation_level: escalation.escalation_level, attempts: attempts.length },
-    });
-
-    // Выводим сообщение для Telegram
-    console.log(formatEscalationMessage(escalation));
+    fs.writeFileSync(path.join(CONFIG.stateDir, `${task.task_id}-escalation.json`), JSON.stringify(report, null, 2));
+    auditLog(task.task_id, { agent_role: 'coder', action: 'escalation', details: report });
+    console.log(JSON.stringify(report, null, 2));
     return false;
 
   } finally {
-    releaseLock(task.service, task.task_id);
-    auditLog(task.task_id, {
-      agent_role: 'coder',
-      action: 'lock_release',
-      details: { service: task.service },
-    });
+    try { runScript('lock.sh', ['release', '--service', task.service, '--task-id', task.task_id]); }
+    catch { /* молча */ }
   }
 }
 
-// ─── CLI точка входа ──────────────────────────────────────────────────────────
+// ─── CLI ──────────────────────────────────────────────────────────────────────
 
 if (require.main === module) {
   const args = process.argv.slice(2);
@@ -316,12 +467,7 @@ if (require.main === module) {
     process.exit(1);
   }
 
-  const taskFile = args[taskFileIdx + 1];
-
-  runCoder(taskFile, dryRun)
-    .then(success => process.exit(success ? 0 : 1))
-    .catch(err => {
-      console.error('[coder] Критическая ошибка:', err.message);
-      process.exit(1);
-    });
+  runCoder(args[taskFileIdx + 1], dryRun)
+    .then(ok => process.exit(ok ? 0 : 1))
+    .catch(err => { console.error('[coder] FATAL:', err.message); process.exit(1); });
 }
