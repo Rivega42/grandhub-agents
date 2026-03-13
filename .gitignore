@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.agent-state/*.json
+!.agent-state/.gitkeep
+.agent-logs/
+.agent-locks/
+package-lock.json
+run-coder.sh
