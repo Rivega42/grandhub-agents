@@ -1,0 +1,18 @@
+{
+  name: grandhub-agents,
+  version: 0.1.0,
+  description: Автономная агентная система для разработки GrandHub,
+  scripts: {
+    coder: ts-node agents/coder.ts,
+    eval: bash scripts/eval-loop.sh,
+    lock: bash scripts/lock.sh,
+    context: bash scripts/context-assemble.sh,
+    status: bash scripts/status.sh,
+    health: bash scripts/health-check.sh
+  },
+  devDependencies: {
+    typescript: ^5.0.0,
+    ts-node: ^10.9.0,
+    @types/node: ^20.0.0
+  }
+}

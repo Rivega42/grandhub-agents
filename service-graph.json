@@ -1,0 +1,76 @@
+{
+  "_comment": "Граф зависимостей сервисов GrandHub. Обновляется при каждом изменении архитектуры.",
+  "_version": "1.0.0",
+  "_updated": "2026-03-13",
+
+  "auth": {
+    "depends_on": [],
+    "depended_by": ["api-gateway", "assistant-runtime", "websocket", "billing"],
+    "deploy_order": 1,
+    "criticality": "critical",
+    "database": "grandbazar",
+    "port": 4001,
+    "description": "Аутентификация и авторизация (JWT)"
+  },
+
+  "api-gateway": {
+    "depends_on": ["auth"],
+    "depended_by": ["web-app"],
+    "deploy_order": 2,
+    "criticality": "critical",
+    "database": null,
+    "port": 4000,
+    "description": "API шлюз — маршрутизация запросов"
+  },
+
+  "assistant-runtime": {
+    "depends_on": ["auth"],
+    "depended_by": [],
+    "deploy_order": 3,
+    "criticality": "critical",
+    "database": "grandbazar",
+    "port": 4002,
+    "description": "Рантайм AI-ассистента (OpenRouter)"
+  },
+
+  "websocket": {
+    "depends_on": ["auth"],
+    "depended_by": ["web-app"],
+    "deploy_order": 4,
+    "criticality": "standard",
+    "database": null,
+    "port": 4014,
+    "description": "WebSocket сервер для real-time коммуникации"
+  },
+
+  "billing": {
+    "depends_on": ["auth"],
+    "depended_by": ["api-gateway"],
+    "deploy_order": 5,
+    "criticality": "standard",
+    "database": "grandbazar",
+    "port": 4200,
+    "description": "Биллинг и управление подписками (Robokassa)"
+  },
+
+  "_TODO_services": {
+    "_comment": "Следующие 17 сервисов — заглушки. Заполнить при деплое.",
+    "memory": { "TODO": true, "deploy_order": 6, "criticality": "standard" },
+    "notifications": { "TODO": true, "deploy_order": 7, "criticality": "standard" },
+    "user-profile": { "TODO": true, "deploy_order": 8, "criticality": "standard" },
+    "files": { "TODO": true, "deploy_order": 9, "criticality": "low" },
+    "search": { "TODO": true, "deploy_order": 10, "criticality": "low" },
+    "analytics": { "TODO": true, "deploy_order": 11, "criticality": "low" },
+    "integrations": { "TODO": true, "deploy_order": 12, "criticality": "low" },
+    "scheduler": { "TODO": true, "deploy_order": 13, "criticality": "standard" },
+    "email": { "TODO": true, "deploy_order": 14, "criticality": "standard" },
+    "telegram-bot": { "TODO": true, "deploy_order": 15, "criticality": "critical" },
+    "web-app": { "TODO": true, "deploy_order": 16, "criticality": "critical" },
+    "admin": { "TODO": true, "deploy_order": 17, "criticality": "standard" },
+    "referral": { "TODO": true, "deploy_order": 18, "criticality": "low" },
+    "promo": { "TODO": true, "deploy_order": 19, "criticality": "low" },
+    "rag": { "TODO": true, "deploy_order": 20, "criticality": "standard" },
+    "voice": { "TODO": true, "deploy_order": 21, "criticality": "low" },
+    "a2a-relay": { "TODO": true, "deploy_order": 22, "criticality": "standard" }
+  }
+}

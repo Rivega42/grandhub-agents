@@ -1,0 +1,32 @@
+{
+  "task_id": "TASK-2026-0313-001",
+  "title": "fix(auth): tx.tenant.create is not a function — исправить моки $transaction в тестах",
+  "description": "6 тестов падают с ошибкой `tx.tenant.create is not a function`. Причина: в моках $transaction колбэк вызывается с `{user, tenant}` (результатом) вместо `mockPrisma` (объектом с методами). Нужно исправить prisma.mock.ts и все места где $transaction.mockImplementation передаёт неправильный tx.",
+  "priority": "high",
+  "type": "bugfix",
+  "acceptance_criteria": [
+    "Все 6 падающих тестов проходят",
+    "mockPrisma передаётся как tx в $transaction.mockImplementation во всех тестах",
+    "Существующие проходящие тесты не сломаны",
+    "TypeScript компилируется без ошибок"
+  ],
+  "file_scope": [
+    "src/__tests__/mocks/prisma.mock.ts",
+    "src/__tests__/auth.service.test.ts",
+    "src/__tests__/telegram.service.test.ts"
+  ],
+  "dependencies": [],
+  "blocked_by": [],
+  "service": "auth",
+  "estimated_complexity": "simple",
+  "timeout_minutes": 20,
+  "max_retries": 3,
+  "escalation_threshold": 3,
+  "cost_budget_usd": 1.00,
+  "created_at": "2026-03-13T19:16:00Z",
+  "created_by": "human",
+  "status": "pending",
+  "assigned_to": null,
+  "worktree_branch": "agent/TASK-2026-0313-001",
+  "checkpoint_file": ".agent-state/TASK-2026-0313-001.json"
+}

@@ -1,0 +1,36 @@
+{
+  "_template": "feature",
+  "_description": "Шаблон TaskSpec для добавления новой функциональности",
+  "task_id": "TASK-YYYY-MMDD-NNN",
+  "title": "feat(<service>): краткое описание фичи",
+  "description": "Подробное описание: что нужно добавить, зачем, как это должно работать. Включи примеры использования.",
+  "priority": "medium",
+  "type": "feature",
+  "acceptance_criteria": [
+    "Функциональность реализована согласно описанию",
+    "Unit тесты покрывают: happy path, edge cases, error cases",
+    "Integration тест проверяет end-to-end сценарий",
+    "TypeScript типы полные, нет any",
+    "AGENT.md обновлён если добавлена новая зависимость или паттерн",
+    "Нет регрессий в существующих тестах"
+  ],
+  "file_scope": [
+    "src/new-feature/index.ts",
+    "src/new-feature/types.ts",
+    "src/new-feature/index.test.ts"
+  ],
+  "dependencies": [],
+  "blocked_by": [],
+  "service": "<service-name>",
+  "estimated_complexity": "medium",
+  "timeout_minutes": 60,
+  "max_retries": 3,
+  "escalation_threshold": 3,
+  "cost_budget_usd": 3.00,
+  "created_at": "YYYY-MM-DDTHH:MM:SSZ",
+  "created_by": "orchestrator",
+  "status": "pending",
+  "assigned_to": null,
+  "worktree_branch": "agent/TASK-YYYY-MMDD-NNN",
+  "checkpoint_file": ".agent-state/TASK-YYYY-MMDD-NNN.json"
+}

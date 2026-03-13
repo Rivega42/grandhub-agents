@@ -1,0 +1,33 @@
+{
+  "_template": "bugfix",
+  "_description": "Шаблон TaskSpec для исправления бага в одном сервисе",
+  "task_id": "TASK-YYYY-MMDD-NNN",
+  "title": "fix(<service>): краткое описание бага",
+  "description": "Подробное описание: что сломано, как воспроизвести, ожидаемое поведение.",
+  "priority": "high",
+  "type": "bugfix",
+  "acceptance_criteria": [
+    "Баг воспроизводящийся сценарий больше не возникает",
+    "Добавлен regression test покрывающий этот баг",
+    "Все существующие тесты проходят",
+    "TypeScript компилируется без ошибок"
+  ],
+  "file_scope": [
+    "src/path/to/broken/file.ts",
+    "src/path/to/broken/file.test.ts"
+  ],
+  "dependencies": [],
+  "blocked_by": [],
+  "service": "<service-name>",
+  "estimated_complexity": "simple",
+  "timeout_minutes": 30,
+  "max_retries": 3,
+  "escalation_threshold": 3,
+  "cost_budget_usd": 1.50,
+  "created_at": "YYYY-MM-DDTHH:MM:SSZ",
+  "created_by": "human",
+  "status": "pending",
+  "assigned_to": null,
+  "worktree_branch": "agent/TASK-YYYY-MMDD-NNN",
+  "checkpoint_file": ".agent-state/TASK-YYYY-MMDD-NNN.json"
+}
