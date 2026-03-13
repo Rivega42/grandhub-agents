@@ -1,0 +1,40 @@
+{
+  "task_id": "TASK-2026-0313-002",
+  "title": "fix(memory): устранить все TS ошибки компиляции",
+  "description": "Сервис memory не компилируется — 28 TypeScript ошибок. Нужно устранить все без изменения бизнес-логики. Категории ошибок:\n1. Отсутствуют @types/morgan и @types/uuid — нужно добавить в devDependencies или создать declare module\n2. Тестовые фикстуры IUserHabit не содержат createdAt/updatedAt — добавить поля в объекты тестов\n3. string не совместим с FrequencyType и FactCategory — добавить as FrequencyType / as FactCategory\n4. Prisma JSON: Record<string,unknown> не совместим с InputJsonValue — привести через as InputJsonValue\n5. Not all code paths return a value — добавить return в routes\n6. Parameter implicitly has any type — добавить типы",
+  "priority": "high",
+  "type": "fix",
+  "acceptance_criteria": [
+    "npx tsc --noEmit в services/memory завершается без ошибок (exit code 0)",
+    "Бизнес-логика не изменена — только типы и аннотации",
+    "Существующие тесты не сломаны"
+  ],
+  "file_scope": [
+    "src/app.ts",
+    "src/engines/emotion-detector.ts",
+    "src/engines/habit-tracker.ts",
+    "src/engines/memory-store.ts",
+    "src/engines/preference-learner.ts",
+    "src/routes/agent-memory.ts",
+    "src/routes/facts.ts",
+    "src/routes/memories.ts",
+    "src/routes/preferences.ts",
+    "src/services/embeddings.ts",
+    "src/services/fact.service.ts",
+    "src/__tests__/habit-tracker.test.ts"
+  ],
+  "dependencies": [],
+  "blocked_by": [],
+  "service": "memory",
+  "estimated_complexity": "medium",
+  "timeout_minutes": 30,
+  "max_retries": 3,
+  "escalation_threshold": 3,
+  "cost_budget_usd": 2.00,
+  "created_at": "2026-03-13T19:36:00Z",
+  "created_by": "human",
+  "status": "pending",
+  "assigned_to": null,
+  "worktree_branch": "agent/TASK-2026-0313-002",
+  "checkpoint_file": ".agent-state/TASK-2026-0313-002.json"
+}

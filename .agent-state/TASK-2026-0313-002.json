@@ -1,0 +1,51 @@
+{
+  "task_id": "TASK-2026-0313-002",
+  "status": "escalated",
+  "current_step": "attempt_3",
+  "steps_completed": [],
+  "steps_remaining": [
+    "worktree",
+    "lock",
+    "context",
+    "implement",
+    "eval",
+    "commit"
+  ],
+  "errors": [
+    {
+      "file": "",
+      "message": "eval-loop.sh завершился с кодом 1: 🔄 Запуск Eval Loop для сервиса: memory\n📂 Монорепо: /opt/grandhub-v3\n\n▶ Шаг: lint...\n  ✅ lint — OK\n▶ Шаг: typecheck...\n  ✅ typecheck — OK\n▶ Шаг: test...\n  ❌ test — FAILED\n\n❌ Eval Loop завершён с ошибкой на шаге: test\n"
+    }
+  ],
+  "retries": 3,
+  "tokens_used": {
+    "input": 0,
+    "output": 0,
+    "cost_usd": 0
+  },
+  "git_commits": [],
+  "eval_results": [
+    {
+      "task_id": "TASK-2026-0313-002",
+      "service": "memory",
+      "passed": false,
+      "steps": [
+        {
+          "step": "lint",
+          "passed": false,
+          "duration_ms": 0,
+          "errors": [
+            {
+              "file": "",
+              "message": "eval-loop.sh завершился с кодом 1: 🔄 Запуск Eval Loop для сервиса: memory\n📂 Монорепо: /opt/grandhub-v3\n\n▶ Шаг: lint...\n  ✅ lint — OK\n▶ Шаг: typecheck...\n  ✅ typecheck — OK\n▶ Шаг: test...\n  ❌ test — FAILED\n\n❌ Eval Loop завершён с ошибкой на шаге: test\n"
+            }
+          ],
+          "timestamp": "2026-03-13T19:57:44.409Z"
+        }
+      ],
+      "total_duration_ms": 0,
+      "timestamp": "2026-03-13T19:57:44.409Z"
+    }
+  ],
+  "last_updated": "2026-03-13T19:57:44.424Z"
+}

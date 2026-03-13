@@ -1,0 +1,42 @@
+{
+  "task_id": "TASK-2026-0313-002",
+  "title": "fix(memory): устранить все TS ошибки компиляции",
+  "service": "memory",
+  "escalation_level": "human",
+  "attempts": [
+    {
+      "attempt_number": 1,
+      "error_summary": "[lint] :undefined — eval-loop.sh завершился с кодом 1: 🔄 Запуск Eval Loop для сервиса: memory\n📂 Монорепо: /opt/grandhub-v3\n\n▶ Шаг: lint...\n  ✅ lint — OK\n▶ Шаг: typecheck...\n  ✅ typecheck — OK\n▶ Шаг: test...\n  ❌ test — FAILED\n\n❌ Eval Loop завершён с ошибкой на шаге: test\n",
+      "fix_tried": "Первая партия исправлений (4 файла из 12):\n\n1. **app.ts**: Добавлен declare module для morgan, чтобы устранить TS7016 (Could not find declaration file)\n\n2. **emotion-detector.ts**: Файл уже корректен, но переформатирован для консистентности\n\n3. **habit-tracker.ts**: \n   - Добавлен declare module для uuid\n   - Добавлены поля createdAt/updatedAt в интерфейс IUserHabit\n   - Добавлены явные приведения типов: `as FrequencyType`, `as any` для Prisma JSON\n   - Исправлен метод mapToIUserHabit для включения createdAt/updatedAt\n\n4. **__tests__/habit-tracker.test.ts**:\n   - Добавлены поля createdAt/updatedAt во все тестовые фикстуры IUserHabit\n   - Явное приведение 'DAILY' as FrequencyType во всех местах\n\nСледующая партия будет содержать оставшиеся 8 файлов (memory-store, preference-learner, routes, services).",
+      "eval_result": {
+        "task_id": "TASK-2026-0313-002",
+        "service": "memory",
+        "passed": false,
+        "steps": [
+          {
+            "step": "lint",
+            "passed": false,
+            "duration_ms": 0,
+            "errors": [
+              {
+                "file": "",
+                "message": "eval-loop.sh завершился с кодом 1: 🔄 Запуск Eval Loop для сервиса: memory\n📂 Монорепо: /opt/grandhub-v3\n\n▶ Шаг: lint...\n  ✅ lint — OK\n▶ Шаг: typecheck...\n  ✅ typecheck — OK\n▶ Шаг: test...\n  ❌ test — FAILED\n\n❌ Eval Loop завершён с ошибкой на шаге: test\n"
+              }
+            ],
+            "timestamp": "2026-03-13T19:57:44.409Z"
+          }
+        ],
+        "total_duration_ms": 0,
+        "timestamp": "2026-03-13T19:57:44.409Z"
+      }
+    }
+  ],
+  "last_error": "[lint] :undefined — eval-loop.sh завершился с кодом 1: 🔄 Запуск Eval Loop для сервиса: memory\n📂 Монорепо: /opt/grandhub-v3\n\n▶ Шаг: lint...\n  ✅ lint — OK\n▶ Шаг: typecheck...\n  ✅ typecheck — OK\n▶ Шаг: test...\n  ❌ test — FAILED\n\n❌ Eval Loop завершён с ошибкой на шаге: test\n",
+  "cost_so_far_usd": 0,
+  "suggested_actions": [
+    "fix_manually",
+    "provide_guidance",
+    "defer"
+  ],
+  "created_at": "2026-03-13T19:57:45.148Z"
+}

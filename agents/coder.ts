@@ -35,6 +35,7 @@ const CONFIG = {
   scriptsDir:   path.resolve(__dirname, '../scripts'),
   stateDir:     path.resolve(__dirname, '../.agent-state'),
   logsDir:      path.resolve(__dirname, '../.agent-logs'),
+  repoStateDir: path.join(process.env.GRANDHUB_ROOT ?? '/opt/grandhub-v3', '.agent-state'),
   repoRoot:     process.env.GRANDHUB_ROOT ?? '/opt/grandhub-v3',
   model:        'anthropic/claude-sonnet-4-5',
   openrouterKey: process.env.OPENROUTER_API_KEY ?? '',
@@ -101,7 +102,7 @@ async function callLLM(systemPrompt: string, userMessage: string): Promise<strin
         { role: 'system', content: systemPrompt },
         { role: 'user',   content: userMessage },
       ],
-      max_tokens: 8000,
+      max_tokens: 16000,
       temperature: 0.1,
     });
 
@@ -138,20 +139,23 @@ async function callLLM(systemPrompt: string, userMessage: string): Promise<strin
 // ─── Парсинг ответа LLM ───────────────────────────────────────────────────────
 
 function parseLLMResponse(raw: string): LLMResponse {
-  // Ищем JSON блок в ответе LLM (между ```json ... ```)
-  const jsonMatch = raw.match(/```json\s*([\s\S]*?)\s*```/);
-  if (jsonMatch) {
-    try {
-      return JSON.parse(jsonMatch[1]) as LLMResponse;
-    } catch { /* fallthrough */ }
+  // Стратегия 1: блок ```json ... ```
+  const jsonBlock = raw.match(/```json\s*([\s\S]*?)\s*```/s);
+  if (jsonBlock) {
+    try { return JSON.parse(jsonBlock[1]) as LLMResponse; } catch { /* fallthrough */ }
   }
 
-  // Fallback: пробуем распарсить весь ответ как JSON
-  try {
-    return JSON.parse(raw) as LLMResponse;
-  } catch { /* fallthrough */ }
+  // Стратегия 2: ищем { ... } от первой { до последней }
+  const firstBrace = raw.indexOf('{');
+  const lastBrace = raw.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    try { return JSON.parse(raw.slice(firstBrace, lastBrace + 1)) as LLMResponse; } catch { /* fallthrough */ }
+  }
 
-  // Fallback: возвращаем пустой результат
+  // Стратегия 3: весь ответ как JSON
+  try { return JSON.parse(raw) as LLMResponse; } catch { /* fallthrough */ }
+
+  // Fallback
   console.error('[coder] ⚠️  Не удалось распарсить ответ LLM как JSON');
   return { changes: [], explanation: raw.slice(0, 500), confidence: 'low' };
 }
@@ -184,7 +188,7 @@ function applyChanges(changes: FileChange[], serviceDir: string): string[] {
 
 // ─── Формирование промпта для LLM ────────────────────────────────────────────
 
-function buildImplementPrompt(contextContent: string, task: TaskSpec): string {
+function buildImplementPrompt(contextContent: string, task: TaskSpec, fileBatch: string[]): string {
   return `Тебе дан контекст сервиса и задача. Реализуй изменения.
 
 ЗАДАЧА: ${task.title}
@@ -193,8 +197,8 @@ ${task.description}
 КРИТЕРИИ ПРИЁМКИ:
 ${task.acceptance_criteria.map((c, i) => `${i + 1}. ${c}`).join('\n')}
 
-ФАЙЛЫ ДЛЯ ИЗМЕНЕНИЯ (file_scope):
-${task.file_scope.join('\n')}
+ФАЙЛЫ ДЛЯ ИЗМЕНЕНИЯ В ЭТОМ БАТЧЕ (${fileBatch.length} из ${task.file_scope.length}):
+${fileBatch.join('\n')}
 
 КОНТЕКСТ СЕРВИСА:
 ${contextContent}
@@ -217,9 +221,11 @@ ${contextContent}
 ПРАВИЛА:
 - Изменяй ТОЛЬКО файлы из file_scope
 - Возвращай ПОЛНОЕ содержимое файла, не diff
+- Если файлов много — верни первые 3-4 самых важных, остальные в следующем ответе
 - TypeScript strict mode, named exports, no any
 - Используй AppError для ошибок
-- Пиши тесты если они в acceptance_criteria`;
+- Пиши тесты если они в acceptance_criteria
+- ВАЖНО: JSON должен быть полным и закрытым, не обрезай его`;
 }
 
 function buildFixPrompt(contextContent: string, task: TaskSpec, evalResult: EvalLoopResult, attempt: number): string {
@@ -285,12 +291,17 @@ export async function runCoder(taskFile: string, dryRun = false): Promise<boolea
   console.error('[coder] 🌿 Создаю git worktree...');
   let worktreePath = serviceDir; // fallback — работаем напрямую если worktree не нужен
   try {
-    const wt = runScript<{ success: boolean; worktree_path: string }>(
-      'worktree.sh', ['create', '--task-id', task.task_id]
-    );
-    if (wt.success) {
-      worktreePath = path.join(wt.worktree_path, 'services', task.service);
-      console.error(`[coder] Worktree: ${wt.worktree_path}`);
+    const wtPath = path.join(CONFIG.repoRoot, 'worktrees', task.task_id);
+    const branchName = `agent/${task.task_id}`;
+    // Создаём worktree напрямую через git — без парсинга stdout
+    const wtResult = spawnSync('git', ['worktree', 'add', wtPath, '-b', branchName, 'main'], {
+      encoding: 'utf8', cwd: CONFIG.repoRoot,
+    });
+    if (wtResult.status === 0 || wtResult.stderr?.includes('already exists')) {
+      worktreePath = path.join(wtPath, 'services', task.service);
+      console.error(`[coder] Worktree: ${wtPath}`);
+    } else {
+      throw new Error(wtResult.stderr ?? 'unknown');
     }
   } catch (e) {
     console.error('[coder] ⚠️  Worktree не создан, работаю в основном репо:', (e as Error).message);
@@ -319,8 +330,50 @@ export async function runCoder(taskFile: string, dryRun = false): Promise<boolea
 
     auditLog(task.task_id, { agent_role: 'coder', action: 'file_read', details: { context: ctxResult.context_file } });
 
-    // 4. Основной цикл: LLM → apply → eval → retry
-    let isFirstAttempt = true;
+    // 4. Батчинг file_scope — максимум BATCH_SIZE файлов за один LLM вызов
+    const BATCH_SIZE = 4;
+    const fileBatches: string[][] = [];
+    for (let i = 0; i < task.file_scope.length; i += BATCH_SIZE) {
+      fileBatches.push(task.file_scope.slice(i, i + BATCH_SIZE));
+    }
+    console.error(`[coder] 📦 Батчей: ${fileBatches.length} (${BATCH_SIZE} файлов макс)`);
+
+    // Применяем все батчи — собираем все изменения перед eval
+    let allApplied: string[] = [];
+    for (let batchIdx = 0; batchIdx < fileBatches.length; batchIdx++) {
+      const fileBatch = fileBatches[batchIdx];
+      console.error(`[coder] 📂 Батч ${batchIdx + 1}/${fileBatches.length}: ${fileBatch.join(', ')}`);
+
+      const batchPrompt = buildImplementPrompt(contextContent, task, fileBatch);
+      let rawBatch: string;
+      try {
+        rawBatch = await callLLM(
+          fs.existsSync(path.join(__dirname, '../prompts/coder.md'))
+            ? fs.readFileSync(path.join(__dirname, '../prompts/coder.md'), 'utf8')
+            : 'Ты Coder агент GrandHub. Пиши TypeScript код строго по инструкции.',
+          batchPrompt
+        );
+      } catch (e) {
+        console.error(`[coder] ❌ LLM ошибка в батче ${batchIdx + 1}: ${(e as Error).message}`);
+        continue;
+      }
+      const batchResponse = parseLLMResponse(rawBatch);
+      console.error(`[coder] Батч ${batchIdx + 1} — Confidence: ${batchResponse.confidence} | Changes: ${batchResponse.changes.length}`);
+      if (batchResponse.changes.length > 0) {
+        const applied = applyChanges(batchResponse.changes, worktreePath);
+        allApplied = allApplied.concat(applied);
+      }
+    }
+
+    if (allApplied.length === 0) {
+      console.error('[coder] ⚠️  Ни один батч не вернул изменений — эскалация');
+      state.status = 'escalated';
+      saveCheckpoint(state);
+    }
+
+    auditLog(task.task_id, { agent_role: 'coder', action: 'file_write', details: { files: allApplied } });
+
+    // 5. Основной цикл eval + fix
     let lastEvalResult: EvalLoopResult | null = null;
 
     while (state.retries < (task.max_retries ?? CONFIG.maxRetries)) {
@@ -328,43 +381,29 @@ export async function runCoder(taskFile: string, dryRun = false): Promise<boolea
       state.last_updated = new Date().toISOString();
       saveCheckpoint(state);
 
-      console.error(`\n[coder] 🤖 LLM вызов (попытка ${state.retries + 1}/${task.max_retries})...`);
-
-      // Формируем промпт
-      const prompt = isFirstAttempt
-        ? buildImplementPrompt(contextContent, task)
-        : buildFixPrompt(contextContent, task, lastEvalResult!, state.retries + 1);
-
-      isFirstAttempt = false;
-
-      // Вызываем LLM
-      let rawResponse: string;
-      try {
-        rawResponse = await callLLM(
-          fs.existsSync(path.join(__dirname, '../prompts/coder.md'))
-            ? fs.readFileSync(path.join(__dirname, '../prompts/coder.md'), 'utf8')
-            : 'Ты Coder агент GrandHub. Пиши TypeScript код строго по инструкции.',
-          prompt
-        );
-      } catch (e) {
-        console.error(`[coder] ❌ LLM ошибка: ${(e as Error).message}`);
-        state.retries++;
-        continue;
+      // После первого eval — фиксим ошибки через LLM (без батчей — точечные правки)
+      if (lastEvalResult !== null && !lastEvalResult.passed) {
+        console.error(`\n[coder] 🔧 Fix LLM (попытка ${state.retries + 1}/${task.max_retries})...`);
+        const fixPrompt = buildFixPrompt(contextContent, task, lastEvalResult, state.retries + 1);
+        let rawFix: string;
+        try {
+          rawFix = await callLLM(
+            fs.existsSync(path.join(__dirname, '../prompts/coder.md'))
+              ? fs.readFileSync(path.join(__dirname, '../prompts/coder.md'), 'utf8')
+              : 'Ты Coder агент GrandHub. Пиши TypeScript код строго по инструкции.',
+            fixPrompt
+          );
+        } catch (e) {
+          console.error(`[coder] ❌ LLM ошибка: ${(e as Error).message}`);
+          state.retries++;
+          continue;
+        }
+        const fixResponse = parseLLMResponse(rawFix);
+        console.error(`[coder] Fix — Confidence: ${fixResponse.confidence} | Changes: ${fixResponse.changes.length}`);
+        if (fixResponse.changes.length > 0) {
+          applyChanges(fixResponse.changes, worktreePath);
+        }
       }
-
-      // Парсим и применяем изменения
-      const llmResponse = parseLLMResponse(rawResponse);
-      console.error(`[coder] Confidence: ${llmResponse.confidence} | Changes: ${llmResponse.changes.length}`);
-      console.error(`[coder] ${llmResponse.explanation}`);
-
-      if (llmResponse.changes.length === 0) {
-        console.error('[coder] ⚠️  LLM не вернул изменений');
-        state.retries++;
-        continue;
-      }
-
-      const applied = applyChanges(llmResponse.changes, worktreePath);
-      auditLog(task.task_id, { agent_role: 'coder', action: 'file_write', details: { files: applied } });
 
       // Запускаем eval loop
       console.error('[coder] 🧪 Запуск eval loop...');
@@ -384,7 +423,7 @@ export async function runCoder(taskFile: string, dryRun = false): Promise<boolea
       }
 
       lastEvalResult = evalResult;
-      state.eval_results.push(evalResult);
+      state.eval_results.push(evalResult as any);
       auditLog(task.task_id, { agent_role: 'coder', action: 'eval_run', details: { passed: evalResult.passed } });
 
       if (evalResult.passed) {
@@ -421,7 +460,7 @@ export async function runCoder(taskFile: string, dryRun = false): Promise<boolea
       attempts.push({
         attempt_number: state.retries + 1,
         error_summary: errorSummary,
-        fix_tried: llmResponse.explanation,
+        fix_tried: 'LLM fix attempt',
         eval_result: evalResult,
       });
 
@@ -445,7 +484,7 @@ export async function runCoder(taskFile: string, dryRun = false): Promise<boolea
     };
 
     fs.writeFileSync(path.join(CONFIG.stateDir, `${task.task_id}-escalation.json`), JSON.stringify(report, null, 2));
-    auditLog(task.task_id, { agent_role: 'coder', action: 'escalation', details: report });
+    auditLog(task.task_id, { agent_role: 'coder', action: 'escalation', details: report as unknown as Record<string, unknown> });
     console.log(JSON.stringify(report, null, 2));
     return false;
 
