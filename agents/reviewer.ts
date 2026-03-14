@@ -15,6 +15,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
 import * as https from 'https';
+import * as http from 'http';
 
 // ─── Типы ─────────────────────────────────────────────────────────────────────
 
@@ -59,14 +60,21 @@ async function callLLM(systemPrompt: string, userMessage: string): Promise<strin
       temperature: 0.1,
     });
 
-    const req = https.request({
-      hostname: 'openrouter.ai',
-      path: '/api/v1/chat/completions',
+
+  const baseUrl = process.env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai';
+  const isLocal = baseUrl.startsWith('http://');
+  const parsedUrl = new URL(baseUrl);
+  const requester = isLocal ? http : https;
+  const apiPath = isLocal ? '/v1/chat/completions' : '/api/v1/chat/completions';
+    const req = requester.request({
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port ? parseInt(parsedUrl.port) : (isLocal ? 80 : 443),
+      path: apiPath,
       method: 'POST',
       headers: {
         'Content-Type':  'application/json',
         'Authorization': `Bearer ${CONFIG.openrouterKey}`,
-        'HTTP-Referer':  'https://grandhub.ru',
+        'HTTP-Referer':  'https://grandhub.ru',  // ignored by OpenClaw
         'X-Title':       'GrandHub Reviewer Agent',
       },
     }, (res) => {
