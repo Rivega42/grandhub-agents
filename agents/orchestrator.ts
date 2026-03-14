@@ -270,6 +270,33 @@ async function watchMode(): Promise<void> {
   console.error('[orchestrator] 🤖 GHA Orchestrator запущен (watch режим)');
   startWatchdog();
 
+  // Crash recovery: незавершённые задачи из предыдущего запуска
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { loadIncompleteStates } = require('./task-state') as typeof import('./task-state');
+    const incomplete = loadIncompleteStates();
+    if (incomplete.length > 0) {
+      console.error(`[orchestrator] 🔄 Crash recovery: ${incomplete.length} незавершённых задач`);
+      const queue = loadQueue();
+      for (const state of incomplete) {
+        const inQueue = queue.find(e => e.task_id === state.taskId);
+        const specFile = path.join(CONFIG.stateDir, `${state.taskId}-spec.json`);
+        if (!inQueue && fs.existsSync(specFile)) {
+          console.error(`[orchestrator] 🔄 Возвращаю: ${state.taskId} (фаза: ${state.phase})`);
+          queue.push({
+            task_id: state.taskId,
+            spec_file: specFile,
+            status: 'pending',
+            added_at: state.startedAt,
+          });
+        }
+      }
+      saveQueue(queue);
+    }
+  } catch (e) {
+    console.error('[orchestrator] ⚠️  Crash recovery failed:', (e as Error).message);
+  }
+
   const tick = async () => {
     const queue = loadQueue();
     const pending = pendingTasks(queue);

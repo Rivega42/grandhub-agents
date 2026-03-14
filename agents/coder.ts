@@ -31,6 +31,8 @@ import type {
   EscalationAttempt,
   AuditLogEntry,
 } from '../types/task-spec';
+import { transitionPhase } from './task-state';
+import { createLogger } from './logger';
 
 // ─── Конфигурация ─────────────────────────────────────────────────────────────
 
@@ -312,8 +314,10 @@ export async function runCoder(taskFile: string, dryRun = false): Promise<boolea
   const task: TaskSpec = JSON.parse(fs.readFileSync(taskFile, 'utf8'));
   const serviceDir = path.join(CONFIG.repoRoot, 'services', task.service);
 
+  const log = createLogger(task.task_id);
   console.error(`\n[coder] 🚀 Задача: ${task.task_id} — ${task.title}`);
   console.error(`[coder] Сервис: ${task.service} (${serviceDir})`);
+  log.info('Task started', { title: task.title, service: task.service });
 
   let state: CheckpointState = loadCheckpoint(task.task_id) ?? {
     task_id: task.task_id,
@@ -353,6 +357,7 @@ export async function runCoder(taskFile: string, dryRun = false): Promise<boolea
     if (wtResult.status === 0 || wtResult.stderr?.includes('already exists')) {
       worktreePath = path.join(wtPath, 'services', task.service);
       console.error(`[coder] Worktree: ${wtPath}`);
+      transitionPhase(task.task_id, 'worktree_setup', { worktreePath });
     } else {
       throw new Error(wtResult.stderr ?? 'unknown');
     }
@@ -382,6 +387,8 @@ export async function runCoder(taskFile: string, dryRun = false): Promise<boolea
       : `Сервис: ${task.service}\nФайлы: ${task.file_scope.join(', ')}`;
 
     auditLog(task.task_id, { agent_role: 'coder', action: 'file_read', details: { context: ctxResult.context_file } });
+    transitionPhase(task.task_id, 'context');
+    log.info('Context assembled', { contextFile: ctxResult.context_file });
 
     // 4. Батчинг file_scope — если пустой, auto-discover из директории сервиса
     const BATCH_SIZE = 4;
@@ -415,6 +422,8 @@ export async function runCoder(taskFile: string, dryRun = false): Promise<boolea
       const fileBatch = fileBatches[batchIdx];
       console.error(`[coder] 📂 Батч ${batchIdx + 1}/${fileBatches.length}: ${fileBatch.join(', ')}`);
 
+      transitionPhase(task.task_id, 'coding', { attempt: state.retries + 1 });
+      log.info(`LLM batch ${batchIdx + 1}/${fileBatches.length}`, { files: fileBatch });
       const batchPrompt = buildImplementPrompt(contextContent, task, fileBatch);
       let rawBatch: string;
       try {
@@ -488,6 +497,8 @@ export async function runCoder(taskFile: string, dryRun = false): Promise<boolea
 
         for (const stepName of stepsToRun) {
           const stepScript = path.join(CONFIG.scriptsDir, `${stepName}.sh`);
+          transitionPhase(task.task_id, `eval_${stepName}` as any);
+          log.info(`Eval step: ${stepName}`);
           const stepStart = Date.now();
           const stepRaw = spawnSync('bash', [stepScript, task.service], {
             encoding: 'utf8',
@@ -567,6 +578,8 @@ export async function runCoder(taskFile: string, dryRun = false): Promise<boolea
       if (effectivePassed) {
         // ✅ Успех — коммитим
         console.error('\n[coder] ✅ Eval loop прошёл! Коммичу...');
+        transitionPhase(task.task_id, 'committing');
+        log.info('Committing changes');
 
         const commitMsg = `${task.type}(${task.service}): ${task.title} [${task.task_id}]`;
         spawnSync('git', ['add', '-A'], { cwd: path.dirname(worktreePath) ?? CONFIG.repoRoot, encoding: 'utf8' });
@@ -619,6 +632,8 @@ export async function runCoder(taskFile: string, dryRun = false): Promise<boolea
         saveCheckpoint(state);
 
         console.error(`\n[coder] 🎉 Задача ${task.task_id} выполнена! Запускаю Reviewer...`);
+        transitionPhase(task.task_id, 'reviewing');
+        log.info('Starting reviewer');
 
         // Автозапуск Reviewer
         try {
@@ -656,6 +671,8 @@ export async function runCoder(taskFile: string, dryRun = false): Promise<boolea
 
         state.current_step = 'done';
         saveCheckpoint(state);
+        transitionPhase(task.task_id, 'completed');
+        log.info('Task completed successfully');
         return true;
       }
 
@@ -683,6 +700,8 @@ export async function runCoder(taskFile: string, dryRun = false): Promise<boolea
     console.error(`\n[coder] 🚨 Исчерпаны все попытки. Эскалация...`);
     state.status = 'escalated';
     saveCheckpoint(state);
+    transitionPhase(task.task_id, 'escalated', { lastError: attempts[attempts.length - 1]?.error_summary });
+    log.error('Task escalated', { retries: state.retries });
 
     const report: EscalationReport = {
       task_id: task.task_id, title: task.title, service: task.service,
