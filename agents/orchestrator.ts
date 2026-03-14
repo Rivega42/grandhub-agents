@@ -18,6 +18,30 @@ import * as http from 'http';
 
 // ─── Конфиг ──────────────────────────────────────────────────────────────────
 
+// Checks CI status of a PR. Returns true if all checks passed.
+function checkCIStatus(prUrl: string): boolean {
+  if (!prUrl) return true;
+  try {
+    const match = prUrl.match(/pull\/(\d+)/);
+    if (!match) return true;
+    const prNum = match[1];
+    const repo = (CONFIG as any).githubRepo ?? 'Rivega42/grandhub-v3';
+    const result = spawnSync('gh', ['pr', 'checks', prNum, '--repo', repo], {
+      encoding: 'utf8', timeout: 30000,
+      env: { ...process.env, GH_TOKEN: process.env.GH_TOKEN ?? '' }
+    });
+    if (result.status !== 0) return true;
+    const lines = (result.stdout ?? '').split('\n');
+    const hasFail = lines.some((l: string) => l.includes('\tfail\t'));
+    const hasPending = lines.some((l: string) => l.includes('\tpending\t') || l.includes('\tin_progress\t'));
+    if (hasPending) return false;
+    return !hasFail;
+  } catch {
+    return true;
+  }
+}
+
+
 const CONFIG = {
   stateDir:    path.resolve(__dirname, '../.agent-state'),
   logsDir:     path.resolve(__dirname, '../.agent-logs'),
@@ -413,6 +437,30 @@ async function runTask(entry: QueueEntry, queue: QueueEntry[]): Promise<void> {
     }
 
     if (reviewVerdict === 'approve') {
+      // Проверяем CI статус PR перед финальным done
+      let prUrlForCI: string | undefined;
+      try {
+        const cpFile2 = path.join(CONFIG.stateDir, );
+        const cp2 = JSON.parse(fs.readFileSync(cpFile2, 'utf8'));
+        const prE = (cp2.git_commits ?? []).find((s: string) => s.startsWith('PR: '));
+        if (prE) prUrlForCI = (prE as string).replace('PR: ', '').trim();
+      } catch { /* ignore */ }
+
+      if (prUrlForCI && !checkCIStatus(prUrlForCI)) {
+        console.error();
+        queue[idx].status = 'failed';
+        queue[idx].result = 'escalated';
+        queue[idx].score = reviewScore;
+        addToDLQ(entry, 'escalated');
+        metrics.tasksFailed++;
+        metrics.currentTask = null;
+        persistMetrics();
+        const ciFailBody = 'Reviewer одобрил score ' + reviewScore + '/100 но CI упал. PR: ' + (prUrlForCI ?? '') + '. Задача в DLQ.';
+        ghComment((entry as any).github_issue, ciFailBody);
+        cleanupWorktree(entry.task_id);
+        return;
+      }
+
       queue[idx].status = 'done';
       queue[idx].result = 'success';
       queue[idx].score = reviewScore;
