@@ -27,6 +27,7 @@ const CONFIG = {
   tgChatId:    process.env.TELEGRAM_CHAT_ID   ?? '357896330',
   watchIntervalMs: 30_000,
   healthPort: Number(process.env.GHA_HEALTH_PORT ?? '9090'),
+  repoRoot: process.env.GRANDHUB_ROOT ?? '/opt/grandhub-v3',
 } as const;
 
 // ─── Типы ─────────────────────────────────────────────────────────────────────
@@ -65,16 +66,31 @@ const taskQueue = new PQueue({ concurrency: 1 });
 let isShuttingDown = false;
 
 // ─── Метрики в памяти ─────────────────────────────────────────────────────────
-const metrics = {
-  startedAt: new Date().toISOString(),
-  tasksCompleted: 0,
-  tasksFailed: 0,
-  tasksEscalated: 0,
-  totalDurationMs: 0,
-  lastTaskId: '',
-  lastTaskAt: '',
-  currentTask: null as string | null,
-};
+const METRICS_FILE = path.join(
+  path.resolve(__dirname, '../.agent-state'),
+  'metrics.json'
+);
+
+function loadPersistedMetrics() {
+  if (fs.existsSync(METRICS_FILE)) {
+    try {
+      const saved = JSON.parse(fs.readFileSync(METRICS_FILE, 'utf8'));
+      return { ...saved, startedAt: new Date().toISOString(), currentTask: null };
+    } catch { /* ok */ }
+  }
+  return {
+    startedAt: new Date().toISOString(),
+    tasksCompleted: 0, tasksFailed: 0, tasksEscalated: 0,
+    totalDurationMs: 0, lastTaskId: '', lastTaskAt: '', currentTask: null as string | null,
+  };
+}
+
+function persistMetrics(): void {
+  try { fs.writeFileSync(METRICS_FILE, JSON.stringify(metrics, null, 2)); }
+  catch { /* ok */ }
+}
+
+const metrics = loadPersistedMetrics();
 
 // ─── Health HTTP Server ────────────────────────────────────────────────────────
 function startHealthServer(): void {
@@ -280,6 +296,7 @@ async function runTask(entry: QueueEntry, queue: QueueEntry[]): Promise<void> {
       metrics.lastTaskId = entry.task_id;
       metrics.lastTaskAt = new Date().toISOString();
       metrics.currentTask = null;
+      persistMetrics();
       // Достаём PR url из checkpoint
       let prUrl: string | undefined;
       try {
@@ -289,6 +306,9 @@ async function runTask(entry: QueueEntry, queue: QueueEntry[]): Promise<void> {
         if (prEntry) prUrl = (prEntry as string).replace('PR: ', '').trim();
       } catch { /* ignore */ }
       notifyCompletion(entry, 'done', { score: reviewScore, verdict: 'approved', pr_url: prUrl });
+      cleanupWorktree(entry.task_id);
+      // Cleanup worktree после успешного merge
+      cleanupWorktree(entry.task_id);
       // Комментарий в issue
       const doneBody = [
         `✅ **Задача выполнена агентом GHA**`,
@@ -318,6 +338,7 @@ async function runTask(entry: QueueEntry, queue: QueueEntry[]): Promise<void> {
     metrics.lastTaskId = entry.task_id;
     metrics.lastTaskAt = new Date().toISOString();
     metrics.currentTask = null;
+    persistMetrics();
 
     let lastError = '';
     if (isEscalated) {
@@ -325,6 +346,8 @@ async function runTask(entry: QueueEntry, queue: QueueEntry[]): Promise<void> {
     }
 
     notifyCompletion(entry, 'failed', { error: lastError?.slice(0, 300) });
+    // Cleanup мусорного worktree
+    cleanupWorktree(entry.task_id);
     // Комментарий в issue
     const failBody = [
       `❌ **Агент GHA не смог выполнить задачу**`,
@@ -359,13 +382,38 @@ async function runOnce(): Promise<void> {
   console.error('[orchestrator] Все задачи обработаны.');
 }
 
+// ─── Worktree Cleanup ─────────────────────────────────────────────────────────
+function cleanupWorktree(taskId: string): void {
+  const worktreeBase = path.join(CONFIG.repoRoot ?? '/opt/grandhub-v3', 'worktrees', taskId);
+  try {
+    // git worktree remove --force
+    const r = spawnSync('git', ['worktree', 'remove', '--force', worktreeBase], {
+      cwd: CONFIG.repoRoot ?? '/opt/grandhub-v3',
+      encoding: 'utf8',
+    });
+    if (r.status === 0) {
+      console.error(`[orchestrator] 🧹 Worktree удалён: ${worktreeBase}`);
+    }
+    // Удаляем ветку агента
+    spawnSync('git', ['branch', '-D', `agent/${taskId}`], {
+      cwd: CONFIG.repoRoot ?? '/opt/grandhub-v3',
+      encoding: 'utf8',
+    });
+  } catch (e) {
+    console.error(`[orchestrator] ⚠️  Cleanup failed for ${taskId}: ${(e as Error).message}`);
+  }
+}
+
 // ─── Watchdog ─────────────────────────────────────────────────────────────────
 function startWatchdog(): void {
   const combinedLog = '/opt/grandhub-agents/.agent-logs/combined.jsonl';
+  let lastAlertSent = 0;
+
   setInterval(() => {
     if (!fs.existsSync(combinedLog)) return;
     const stat = fs.statSync(combinedLog);
     const silentMinutes = (Date.now() - stat.mtimeMs) / 60_000;
+
     if (silentMinutes > 30) {
       const alert = {
         alert: 'GHA: нет активности 30+ минут',
@@ -377,6 +425,13 @@ function startWatchdog(): void {
         JSON.stringify(alert, null, 2)
       );
       console.error(`[watchdog] ⚠️  Нет активности ${Math.round(silentMinutes)} минут`);
+
+      // Telegram alert — не чаще раза в час
+      const now = Date.now();
+      if (now - lastAlertSent > 60 * 60_000) {
+        lastAlertSent = now;
+        tgSend(`⚠️ <b>GHA Watchdog Alert</b>\nНет активности уже <b>${Math.round(silentMinutes)} минут</b>\n\nПроверь: <code>systemctl status grandhub-gha-watch</code>`);
+      }
     }
   }, 5 * 60_000);
 }
@@ -428,9 +483,16 @@ async function watchMode(): Promise<void> {
     } catch { /* ignore */ }
     const queue = loadQueue();
     const pending = pendingTasks(queue);
-    if (pending.length > 0) {
-      console.error(`[orchestrator] Новых задач: ${pending.length}`);
-      for (const entry of pending) {
+    // Rate limit: не более 10 задач одновременно в очереди
+    const MAX_PENDING = 10;
+    const running = queue.filter(e => e.status === 'running').length;
+    const pendingSlice = pending.slice(0, Math.max(0, MAX_PENDING - running));
+    if (pendingSlice.length > 0 && pending.length > pendingSlice.length) {
+      console.error(`[orchestrator] ⏳ Rate limit: обрабатываю ${pendingSlice.length}/${pending.length}`);
+    }
+    if (pendingSlice.length > 0) {
+      console.error(`[orchestrator] Новых задач: ${pendingSlice.length}`);
+      for (const entry of pendingSlice) {
         // p-queue: не добавляем если уже в очереди или running
         const fresh = loadQueue();
         const current = fresh.find(e => e.task_id === entry.task_id);
@@ -454,6 +516,7 @@ async function watchMode(): Promise<void> {
       console.error(`[orchestrator] Жду завершения текущей задачи...`);
       await taskQueue.onIdle();
     }
+    persistMetrics();
     console.error('[orchestrator] Все задачи завершены. Выхожу.');
     process.exit(0);
   };
