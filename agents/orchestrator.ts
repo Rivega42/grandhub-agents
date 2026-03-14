@@ -483,6 +483,15 @@ function startWatchdog(): void {
   let lastAlertSent = 0;
 
   setInterval(() => {
+    // Тишина при пустой очереди — норма, не алертим
+    const hasActiveTasks = (() => {
+      try {
+        const q: QueueEntry[] = JSON.parse(fs.readFileSync(CONFIG.queueFile, 'utf8'));
+        return q.some(e => e.status === 'pending' || e.status === 'running');
+      } catch { return false; }
+    })();
+    if (!hasActiveTasks && !metrics.currentTask) return;
+
     if (!fs.existsSync(combinedLog)) return;
     const stat = fs.statSync(combinedLog);
     const silentMinutes = (Date.now() - stat.mtimeMs) / 60_000;
