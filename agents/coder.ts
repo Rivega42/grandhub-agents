@@ -306,7 +306,7 @@ ${contextContent}
 
 // ─── Основная логика ──────────────────────────────────────────────────────────
 
-export async function runCoder(taskFile: string, dryRun = false): Promise<boolean> {
+export async function runCoder(taskFile: string, dryRun = false, reviewFeedbackFile?: string): Promise<boolean> {
   if (!CONFIG.openrouterKey) {
     throw new Error('OPENROUTER_API_KEY не установлен. Добавь в env.');
   }
@@ -318,6 +318,17 @@ export async function runCoder(taskFile: string, dryRun = false): Promise<boolea
   console.error(`\n[coder] 🚀 Задача: ${task.task_id} — ${task.title}`);
   console.error(`[coder] Сервис: ${task.service} (${serviceDir})`);
   log.info('Task started', { title: task.title, service: task.service });
+
+  // Фидбек от Reviewer (если это retry после REJECT)
+  let reviewerFeedback = '';
+  if (reviewFeedbackFile && fs.existsSync(reviewFeedbackFile)) {
+    try {
+      const fb = JSON.parse(fs.readFileSync(reviewFeedbackFile, 'utf8'));
+      reviewerFeedback = fb.feedback ?? '';
+      console.error(`[coder] 📝 Retry с фидбеком Reviewer (попытка ${fb.attempt}): ${reviewerFeedback.slice(0, 100)}...`);
+      log.info('Review feedback loaded', { attempt: fb.attempt });
+    } catch { /* ok */ }
+  }
 
   let state: CheckpointState = loadCheckpoint(task.task_id) ?? {
     task_id: task.task_id,
@@ -424,7 +435,11 @@ export async function runCoder(taskFile: string, dryRun = false): Promise<boolea
 
       transitionPhase(task.task_id, 'coding', { attempt: state.retries + 1 });
       log.info(`LLM batch ${batchIdx + 1}/${fileBatches.length}`, { files: fileBatch });
-      const batchPrompt = buildImplementPrompt(contextContent, task, fileBatch);
+      // Добавляем фидбек Reviewer в промпт если это retry
+      const taskWithFeedback = reviewerFeedback
+        ? { ...task, description: task.description + `\n\n⚠️ ПРЕДЫДУЩИЙ РЕВЬЮ ОТКЛОНЁН. Необходимо исправить:\n${reviewerFeedback}` }
+        : task;
+      const batchPrompt = buildImplementPrompt(contextContent, taskWithFeedback, fileBatch);
       let rawBatch: string;
       try {
         rawBatch = await callLLM(
@@ -729,13 +744,15 @@ if (require.main === module) {
   const args = process.argv.slice(2);
   const taskFileIdx = args.indexOf('--task-file');
   const dryRun = args.includes('--dry-run');
+  const reviewFbIdx = args.indexOf('--review-feedback');
+  const reviewFeedbackFile = reviewFbIdx !== -1 ? args[reviewFbIdx + 1] : undefined;
 
   if (taskFileIdx === -1 || !args[taskFileIdx + 1]) {
     console.error('Использование: ts-node agents/coder.ts --task-file <path> [--dry-run]');
     process.exit(1);
   }
 
-  runCoder(args[taskFileIdx + 1], dryRun)
+  runCoder(args[taskFileIdx + 1], dryRun, reviewFeedbackFile)
     .then(ok => process.exit(ok ? 0 : 1))
     .catch(err => { console.error('[coder] FATAL:', err.message); process.exit(1); });
 }

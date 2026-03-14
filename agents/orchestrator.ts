@@ -41,6 +41,8 @@ interface QueueEntry {
   finished_at?: string;
   result?: 'success' | 'escalated' | 'reviewer_rejected';
   score?: number;
+  review_attempts?: number;   // сколько раз Reviewer отклонял
+  review_feedback?: string;   // последний фидбек от Reviewer (для retry)
 }
 
 // ─── Telegram уведомления ─────────────────────────────────────────────────────
@@ -242,10 +244,37 @@ async function runTask(entry: QueueEntry, queue: QueueEntry[]): Promise<void> {
 
   const coderScript = path.join(CONFIG.scriptDir, 'run-coder.sh');
 
+  // Concurrency safety: один активный task на сервис
+  let serviceId = 'unknown';
+  try {
+    serviceId = JSON.parse(fs.readFileSync(entry.spec_file, 'utf8')).service ?? 'unknown';
+    const currentQ = loadQueue();
+    const conflicting = currentQ.find(e =>
+      e.task_id !== entry.task_id &&
+      e.status === 'running' &&
+      (() => {
+        try { return JSON.parse(fs.readFileSync(e.spec_file, 'utf8')).service === serviceId; }
+        catch { return false; }
+      })()
+    );
+    if (conflicting) {
+      console.error(`[orchestrator] ⏳ ${entry.task_id} — ждёт: ${serviceId} занят (${conflicting.task_id})`);
+      const qi = currentQ.findIndex(e => e.task_id === entry.task_id);
+      if (qi !== -1) { currentQ[qi].status = 'pending'; saveQueue(currentQ); }
+      return;
+    }
+  } catch { /* ok */ }
+
   // Async spawn — не блокирует event loop
+  // Если есть фидбек от Reviewer — передаём в coder
+  const reviewFeedbackFile = path.join(CONFIG.stateDir, `${entry.task_id}-reviewer-feedback.json`);
+  const hasReviewFeedback = fs.existsSync(reviewFeedbackFile);
+
   const { exitCode, stderr: stderrOut } = await new Promise<{ exitCode: number; stderr: string }>((resolve) => {
     const stderrChunks: Buffer[] = [];
-    const child = spawn('bash', [coderScript, '--task-file', entry.spec_file], {
+    const coderArgs = ['--task-file', entry.spec_file];
+    if (hasReviewFeedback) coderArgs.push('--review-feedback', reviewFeedbackFile);
+    const child = spawn('bash', [coderScript, ...coderArgs], {
       stdio: ['ignore', 'inherit', 'pipe'], // stdout → terminal, stderr → capture
       timeout: 30 * 60 * 1000,
     });
@@ -319,11 +348,55 @@ async function runTask(entry: QueueEntry, queue: QueueEntry[]): Promise<void> {
       ].filter(Boolean).join('\n');
       ghComment((entry as any).github_issue, doneBody);
     } else {
+      // Reviewer REJECT — даём 2 попытки переделать
+      const MAX_REVIEW_RETRIES = 2;
+      const prevAttempts = (entry as any).review_attempts ?? 0;
+
+      if (prevAttempts < MAX_REVIEW_RETRIES) {
+        // Извлекаем фидбек из review файла
+        let feedback = `Reviewer вернул: ${reviewVerdict} (score: ${reviewScore}/100)`;
+        try {
+          const reviewFile = path.join(CONFIG.stateDir, `${entry.task_id}-review.json`);
+          const rv = JSON.parse(fs.readFileSync(reviewFile, 'utf8'));
+          const issues = (rv.issues ?? [])
+            .filter((i: { severity: string }) => ['critical', 'major'].includes(i.severity))
+            .map((i: { severity: string; file: string; message: string; suggestion?: string }) =>
+              `[${i.severity}] ${i.file}: ${i.message}${i.suggestion ? ` → ${i.suggestion}` : ''}`
+            )
+            .join('\n');
+          if (issues) feedback += `\n\nПроблемы:\n${issues}`;
+        } catch { /* ok */ }
+
+        // Пишем feedback файл чтобы coder знал о нём
+        fs.writeFileSync(
+          path.join(CONFIG.stateDir, `${entry.task_id}-reviewer-feedback.json`),
+          JSON.stringify({ feedback, attempt: prevAttempts + 1, ts: new Date().toISOString() }, null, 2)
+        );
+
+        // Сбрасываем задачу обратно в pending — coder перезапустится с фидбеком
+        queue[idx].status = 'pending';
+        queue[idx].result = undefined;
+        (queue[idx] as any).review_attempts = prevAttempts + 1;
+        (queue[idx] as any).review_feedback = feedback;
+        queue[idx].started_at = undefined;
+        queue[idx].finished_at = undefined;
+
+        // Чистим checkpoint чтобы coder начал заново
+        const cpFile = path.join(CONFIG.stateDir, `${entry.task_id}.json`);
+        if (fs.existsSync(cpFile)) fs.unlinkSync(cpFile);
+
+        console.error(`[orchestrator] 🔁 ${entry.task_id} — REJECT retry ${prevAttempts + 1}/${MAX_REVIEW_RETRIES} (score: ${reviewScore})`);
+        saveQueue(queue);
+        return; // выходим — задача вернётся в tick
+      }
+
+      // Исчерпали попытки
       queue[idx].status = 'done';
       queue[idx].result = 'reviewer_rejected';
       queue[idx].score = reviewScore;
-      console.error(`[orchestrator] ⚠️ ${entry.task_id} — done, reviewer: ${reviewVerdict} (score: ${reviewScore})`);
+      console.error(`[orchestrator] ⚠️ ${entry.task_id} — REJECT (исчерпаны попытки, score: ${reviewScore})`);
       notifyCompletion(entry, 'review', { score: reviewScore, verdict: reviewVerdict });
+      ghComment((entry as any).github_issue, `⚠️ **Reviewer отклонил после ${prevAttempts + 1} попыток** (score: ${reviewScore}/100)\n\n**Задача:** ${entry.task_id}\n\nНужно ручное вмешательство.`);
     }
   } else {
     // Проверяем escalation
