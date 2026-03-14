@@ -38,7 +38,7 @@
     "added_at": "2026-03-14T09:14:35.663Z",
     "github_issue": 3,
     "review_attempts": 1,
-    "review_feedback": "Reviewer вернул: request_changes (score: 50/100)\n\nПроблемы:\n[major] N/A: Diff недоступен — невозможно верифицировать изменения → Предоставить git diff или лог выполненных systemctl команд\n[major] N/A: Eval проверяет api-gateway код, но задача про systemd инфраструктуру → Добавить проверку: systemctl is-enabled grandbazar-*.service должен возвращать disabled/not-found для всех 4 юнитов",
+    "review_feedback": "Reviewer \u0432\u0435\u0440\u043d\u0443\u043b: request_changes (score: 50/100)\n\n\u041f\u0440\u043e\u0431\u043b\u0435\u043c\u044b:\n[major] N/A: Diff \u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u0435\u043d \u2014 \u043d\u0435\u0432\u043e\u0437\u043c\u043e\u0436\u043d\u043e \u0432\u0435\u0440\u0438\u0444\u0438\u0446\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u044f \u2192 \u041f\u0440\u0435\u0434\u043e\u0441\u0442\u0430\u0432\u0438\u0442\u044c git diff \u0438\u043b\u0438 \u043b\u043e\u0433 \u0432\u044b\u043f\u043e\u043b\u043d\u0435\u043d\u043d\u044b\u0445 systemctl \u043a\u043e\u043c\u0430\u043d\u0434\n[major] N/A: Eval \u043f\u0440\u043e\u0432\u0435\u0440\u044f\u0435\u0442 api-gateway \u043a\u043e\u0434, \u043d\u043e \u0437\u0430\u0434\u0430\u0447\u0430 \u043f\u0440\u043e systemd \u0438\u043d\u0444\u0440\u0430\u0441\u0442\u0440\u0443\u043a\u0442\u0443\u0440\u0443 \u2192 \u0414\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0443: systemctl is-enabled grandbazar-*.service \u0434\u043e\u043b\u0436\u0435\u043d \u0432\u043e\u0437\u0432\u0440\u0430\u0449\u0430\u0442\u044c disabled/not-found \u0434\u043b\u044f \u0432\u0441\u0435\u0445 4 \u044e\u043d\u0438\u0442\u043e\u0432",
     "started_at": "2026-03-14T09:48:45.065Z",
     "finished_at": "2026-03-14T09:48:46.793Z",
     "result": "success",
@@ -91,8 +91,27 @@
   {
     "task_id": "TASK-20260314-GH10",
     "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH10-spec.json",
-    "status": "pending",
+    "status": "failed",
     "added_at": "2026-03-14T10:50:54.753Z",
-    "github_issue": 10
+    "github_issue": 10,
+    "review_attempts": 1,
+    "review_feedback": "Reviewer \u0432\u0435\u0440\u043d\u0443\u043b: request_changes (score: 30/100)\n\n\u041f\u0440\u043e\u0431\u043b\u0435\u043c\u044b:\n[critical] services/skill-registry/: Eval \u0437\u0430\u043f\u0443\u0449\u0435\u043d \u043d\u0430 \u043d\u0435\u043f\u0440\u0430\u0432\u0438\u043b\u044c\u043d\u043e\u043c \u0441\u0435\u0440\u0432\u0438\u0441\u0435: telegram-bot \u0432\u043c\u0435\u0441\u0442\u043e skill-registry \u2192 \u041f\u0435\u0440\u0435\u0437\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u044c eval \u043d\u0430 \u043f\u0440\u0430\u0432\u0438\u043b\u044c\u043d\u043e\u043c \u0441\u0435\u0440\u0432\u0438\u0441\u0435: services/skill-registry/\n[critical] services/skill-registry/prisma/schema.prisma: \u041d\u0435\u0442 diff \u2014 \u043d\u0435\u0432\u043e\u0437\u043c\u043e\u0436\u043d\u043e \u043f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c \u0434\u043e\u0431\u0430\u0432\u043b\u0435\u043d\u044b \u043b\u0438 \u043f\u043e\u043b\u044f \u0432 \u043c\u043e\u0434\u0435\u043b\u044c AiSkill \u2192 \u041f\u0440\u0435\u0434\u043e\u0441\u0442\u0430\u0432\u0438\u0442\u044c git diff \u0438\u043b\u0438 \u0441\u043f\u0438\u0441\u043e\u043a \u0438\u0437\u043c\u0435\u043d\u0451\u043d\u043d\u044b\u0445 \u0444\u0430\u0439\u043b\u043e\u0432\n[critical] services/skill-registry/prisma/migrations/: \u041d\u0435 \u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u043e \u0441\u043e\u0437\u0434\u0430\u043d\u0438\u0435 \u043c\u0438\u0433\u0440\u0430\u0446\u0438\u0438 \u2192 \u041f\u043e\u043a\u0430\u0437\u0430\u0442\u044c \u0441\u043e\u0437\u0434\u0430\u043d\u043d\u044b\u0439 \u0444\u0430\u0439\u043b \u043c\u0438\u0433\u0440\u0430\u0446\u0438\u0438 \u0438 \u0440\u0435\u0437\u0443\u043b\u044c\u0442\u0430\u0442 prisma migrate\n[major] N/A: \u041e\u043f\u0438\u0441\u0430\u043d\u0438\u0435 \u0437\u0430\u0434\u0430\u0447\u0438 \u043e\u0431\u0440\u0435\u0437\u0430\u043d\u043e \u2014 \u043d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u044b \u0442\u0440\u0435\u0431\u0443\u0435\u043c\u044b\u0435 \u043f\u043e\u043b\u044f \u2192 \u041f\u0440\u0435\u0434\u043e\u0441\u0442\u0430\u0432\u0438\u0442\u044c \u043f\u043e\u043b\u043d\u043e\u0435 \u043e\u043f\u0438\u0441\u0430\u043d\u0438\u0435 issue #10 \u0441 \u043f\u0435\u0440\u0435\u0447\u043d\u0435\u043c \u043f\u043e\u043b\u0435\u0439",
+    "started_at": "2026-03-14T10:54:38.750Z",
+    "finished_at": "2026-03-14T11:02:17.198Z",
+    "result": "escalated"
+  },
+  {
+    "task_id": "TASK-20260314-GH11",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH11-spec.json",
+    "status": "running",
+    "added_at": "2026-03-14T12:18:39.516Z",
+    "github_issue": 11,
+    "started_at": "2026-03-14T12:18:39.543Z",
+    "service": "assistant-runtime",
+    "service_path": "/opt/grandhub-v3/services/assistant-runtime",
+    "file_scope": [
+      "src/services/prompt-builder.ts",
+      "src/routes/messages.ts"
+    ]
   }
 ]

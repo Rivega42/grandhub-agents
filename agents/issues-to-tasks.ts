@@ -85,11 +85,22 @@ function detectService(issue: any): string {
   // По тексту
   // Дополнительный поиск по тексту тайтла/тела
   const textSearch = (title + ' ' + body).toLowerCase();
+  // Высокоприоритетные — проверяем по точному названию сервиса ПЕРВЫМИ
+  const exactServices = [
+    'assistant-runtime', 'skill-registry', 'api-gateway', 'auth', 'billing',
+    'telegram-bot', 'websocket', 'memory', 'notifications', 'usage', 'analytics',
+    'marketplace', 'moderation', 'voice', 'workflow-engine',
+  ];
+  for (const svc of exactServices) {
+    if (textSearch.includes(svc)) return svc;
+  }
+
   const textServiceMap: Record<string,string> = {
-    'telegram': 'telegram-bot', 'бот': 'telegram-bot', 'bot': 'telegram-bot',
+    'ассистент': 'assistant-runtime', 'assistant': 'assistant-runtime', 'prompt-builder': 'assistant-runtime', 'flowconfig': 'assistant-runtime', 'системный промпт': 'assistant-runtime',
+    'telegram': 'telegram-bot', 'bot': 'telegram-bot',
     'billing': 'billing', 'биллинг': 'billing', 'robokassa': 'billing', 'оплат': 'billing',
-    'skill-registry': 'skill-registry', 'скилл': 'skill-registry', 'навык': 'skill-registry', 'ai_skills': 'skill-registry', 'marketplace': 'skill-registry',
-    'usage': 'usage', 'аналитик': 'analytics', 'analytics': 'analytics',
+    'навык': 'skill-registry', 'ai_skills': 'skill-registry',
+    'usage': 'usage', 'аналитик': 'analytics',
   };
   for (const [keyword, svc] of Object.entries(textServiceMap)) {
     if (textSearch.includes(keyword)) return svc;
