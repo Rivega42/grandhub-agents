@@ -143,7 +143,15 @@ function runTask(entry: QueueEntry, queue: QueueEntry[]): void {
       queue[idx].result = 'success';
       queue[idx].score = reviewScore;
       console.error(`[orchestrator] ✅ ${entry.task_id} — DONE (score: ${reviewScore})`);
-      notifyCompletion(entry, 'done', { score: reviewScore, verdict: 'approved' });
+      // Достаём PR url из checkpoint
+      let prUrl: string | undefined;
+      try {
+        const cpFile = path.join(CONFIG.stateDir, `${entry.task_id}.json`);
+        const cp = JSON.parse(fs.readFileSync(cpFile, 'utf8'));
+        const prEntry = (cp.git_commits ?? []).find((s: string) => s.startsWith('PR: '));
+        if (prEntry) prUrl = (prEntry as string).replace('PR: ', '').trim();
+      } catch { /* ignore */ }
+      notifyCompletion(entry, 'done', { score: reviewScore, verdict: 'approved', pr_url: prUrl });
     } else {
       queue[idx].status = 'done';
       queue[idx].result = 'reviewer_rejected';

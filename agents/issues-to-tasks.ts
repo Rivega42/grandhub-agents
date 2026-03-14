@@ -124,7 +124,10 @@ function issueToTaskSpec(issue: any): any {
 
   return {
     task_id: taskId,
-    title: `${type}(${service}): ${issue.title}`,
+    // Если title уже содержит conventional commit prefix — не дублируем
+    title: /^(feat|fix|chore|refactor|docs|test)\(/.test(issue.title)
+      ? issue.title
+      : `${type}(${service}): ${issue.title}`,
     description: `GitHub Issue #${issue.number}: ${issue.title}\n\n${(issue.body ?? '').slice(0, 500)}`,
     service,
     type,
