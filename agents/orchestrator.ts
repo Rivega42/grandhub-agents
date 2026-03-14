@@ -43,17 +43,20 @@ interface QueueEntry {
 // ─── Telegram уведомления ─────────────────────────────────────────────────────
 
 function tgSend(text: string): void {
-  if (!CONFIG.tgBotToken) return;
+  if (!CONFIG.tgBotToken) { return; }
+  // spawnSync curl — блокирующий, процесс не умрёт до отправки
   const body = JSON.stringify({ chat_id: CONFIG.tgChatId, text, parse_mode: 'HTML' });
-  const req = https.request({
-    hostname: 'api.telegram.org',
-    path: `/bot${CONFIG.tgBotToken}/sendMessage`,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-  }, () => {});
-  req.on('error', () => {});
-  req.write(body);
-  req.end();
+  const r = spawnSync('curl', [
+    '-s', '-X', 'POST',
+    `https://api.telegram.org/bot${CONFIG.tgBotToken}/sendMessage`,
+    '-H', 'Content-Type: application/json',
+    '-d', body,
+  ], { encoding: 'utf8', timeout: 10000 });
+  try {
+    const resp = JSON.parse(r.stdout ?? '{}');
+    if (resp.ok) console.error(`[orchestrator] Telegram OK msg=${resp.result?.message_id}`);
+    else console.error('[orchestrator] Telegram ERR:', resp.description);
+  } catch { console.error('[orchestrator] Telegram raw:', (r.stdout ?? '').slice(0, 80)); }
 }
 
 // ─── Очередь ──────────────────────────────────────────────────────────────────
