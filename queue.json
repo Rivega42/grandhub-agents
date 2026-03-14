@@ -13,23 +13,86 @@
   {
     "task_id": "TASK-20260314-GH5",
     "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH5-spec.json",
-    "status": "running",
+    "status": "done",
     "added_at": "2026-03-14T09:14:35.662Z",
     "github_issue": 5,
-    "started_at": "2026-03-14T09:14:35.697Z"
+    "started_at": "2026-03-14T09:14:35.697Z",
+    "finished_at": "2026-03-14T09:23:56.201Z",
+    "result": "success",
+    "score": 70
   },
   {
     "task_id": "TASK-20260314-GH4",
     "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH4-spec.json",
-    "status": "pending",
+    "status": "failed",
     "added_at": "2026-03-14T09:14:35.663Z",
-    "github_issue": 4
+    "github_issue": 4,
+    "started_at": "2026-03-14T09:45:26.316Z",
+    "finished_at": "2026-03-14T09:46:22.505Z",
+    "result": "escalated"
   },
   {
     "task_id": "TASK-20260314-GH3",
     "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH3-spec.json",
-    "status": "pending",
+    "status": "done",
     "added_at": "2026-03-14T09:14:35.663Z",
-    "github_issue": 3
+    "github_issue": 3,
+    "review_attempts": 1,
+    "review_feedback": "Reviewer вернул: request_changes (score: 50/100)\n\nПроблемы:\n[major] N/A: Diff недоступен — невозможно верифицировать изменения → Предоставить git diff или лог выполненных systemctl команд\n[major] N/A: Eval проверяет api-gateway код, но задача про systemd инфраструктуру → Добавить проверку: systemctl is-enabled grandbazar-*.service должен возвращать disabled/not-found для всех 4 юнитов",
+    "started_at": "2026-03-14T09:48:45.065Z",
+    "finished_at": "2026-03-14T09:48:46.793Z",
+    "result": "success",
+    "score": 85
+  },
+  {
+    "task_id": "TASK-20260314-GH9",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH9-spec.json",
+    "status": "done",
+    "added_at": "2026-03-14T09:58:08.141Z",
+    "github_issue": 9,
+    "started_at": "2026-03-14T09:58:08.175Z",
+    "finished_at": "2026-03-14T10:00:46.673Z",
+    "result": "success",
+    "score": 70
+  },
+  {
+    "task_id": "TASK-20260314-GH8",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH8-spec.json",
+    "status": "done",
+    "added_at": "2026-03-14T09:58:08.142Z",
+    "github_issue": 8,
+    "started_at": "2026-03-14T10:10:18.066Z",
+    "finished_at": "2026-03-14T10:10:19.891Z",
+    "result": "success",
+    "score": 70
+  },
+  {
+    "task_id": "TASK-20260314-GH7",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH7-spec.json",
+    "status": "done",
+    "added_at": "2026-03-14T09:58:08.142Z",
+    "github_issue": 7,
+    "started_at": "2026-03-14T10:10:39.614Z",
+    "finished_at": "2026-03-14T10:10:41.338Z",
+    "result": "success",
+    "score": 88
+  },
+  {
+    "task_id": "TASK-20260314-GH6",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH6-spec.json",
+    "status": "done",
+    "added_at": "2026-03-14T09:58:08.143Z",
+    "github_issue": 6,
+    "started_at": "2026-03-14T10:10:42.500Z",
+    "finished_at": "2026-03-14T10:10:44.348Z",
+    "result": "success",
+    "score": 70
+  },
+  {
+    "task_id": "TASK-20260314-GH10",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH10-spec.json",
+    "status": "pending",
+    "added_at": "2026-03-14T10:50:54.753Z",
+    "github_issue": 10
   }
 ]

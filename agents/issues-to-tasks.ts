@@ -36,6 +36,7 @@ const CONFIG = {
     'assistant-runtime': 'assistant-runtime',
     'websocket':         'websocket',
     'telegram-bot':      'telegram-bot',
+    'skill-registry':     'skill-registry',
     'billing':           'billing',
     'usage':             'usage',
     'analytics':         'analytics',
@@ -87,6 +88,7 @@ function detectService(issue: any): string {
   const textServiceMap: Record<string,string> = {
     'telegram': 'telegram-bot', 'бот': 'telegram-bot', 'bot': 'telegram-bot',
     'billing': 'billing', 'биллинг': 'billing', 'robokassa': 'billing', 'оплат': 'billing',
+    'skill-registry': 'skill-registry', 'скилл': 'skill-registry', 'навык': 'skill-registry', 'ai_skills': 'skill-registry', 'marketplace': 'skill-registry',
     'usage': 'usage', 'аналитик': 'analytics', 'analytics': 'analytics',
   };
   for (const [keyword, svc] of Object.entries(textServiceMap)) {
