@@ -156,7 +156,7 @@ function startHealthServer(): void {
     }
   });
 
-  server.listen(CONFIG.healthPort, '127.0.0.1', () => {
+  server.listen(CONFIG.healthPort, '0.0.0.0', () => {
     console.error(`[orchestrator] 🩺 Health: http://127.0.0.1:${CONFIG.healthPort}/healthz`);
   });
 
