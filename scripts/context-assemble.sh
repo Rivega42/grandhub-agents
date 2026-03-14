@@ -1,4 +1,7 @@
 #!/bin/bash
+# Вычисляем директорию скрипта для OUTPUT_DIR
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")"/.. && pwd)"
+
 # context-assemble.sh — сборка контекста для Coder агента с подсчётом токенов
 # Загружает AGENT.md сервиса + файлы из file_scope TaskSpec
 # Лимит контекста: 30K токенов (предупреждение при >28K)
@@ -9,7 +12,7 @@ set -euo pipefail
 SERVICE=""
 TASK_ID=""
 TASK_FILE=""
-OUTPUT_DIR=".agent-state"
+OUTPUT_DIR="${SCRIPT_DIR}/.agent-state"
 SCRIPT_NAME="context-assemble.sh"
 MAX_TOKENS=28000
 REPO_ROOT="/opt/grandhub-v3"

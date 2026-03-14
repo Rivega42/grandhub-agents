@@ -149,6 +149,7 @@ async function callLLM(systemPrompt: string, userMessage: string): Promise<strin
 // ─── Парсинг ответа LLM ───────────────────────────────────────────────────────
 
 function parseLLMResponse(raw: string): LLMResponse {
+  console.error('[coder] 🔍 Raw LLM (' + raw.length + '):', raw.slice(0, 200));
   // Стратегия 1: блок ```json ... ```
   const jsonBlock = raw.match(/```json\s*([\s\S]*?)\s*```/s);
   if (jsonBlock) {
@@ -199,7 +200,9 @@ function applyChanges(changes: FileChange[], serviceDir: string): string[] {
 // ─── Формирование промпта для LLM ────────────────────────────────────────────
 
 function buildImplementPrompt(contextContent: string, task: TaskSpec, fileBatch: string[]): string {
-  return `Тебе дан контекст сервиса и задача. Реализуй изменения.
+  return `[РЕЖИМ: ТОЛЬКО JSON] Не пиши пояснений. Сразу выдай JSON.
+
+Тебе дан контекст сервиса и задача. Реализуй изменения.
 
 ЗАДАЧА: ${task.title}
 ${task.description}
