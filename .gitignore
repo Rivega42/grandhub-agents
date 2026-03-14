@@ -6,3 +6,8 @@ dist/
 .agent-locks/
 package-lock.json
 run-coder.sh
+
+# Secrets
+.env
+.env.*
+!.env.example
