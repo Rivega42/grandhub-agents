@@ -1,0 +1,8 @@
+{
+  "taskId": "TASK-20260314-GH20",
+  "phase": "completed",
+  "attempt": 1,
+  "worktreePath": "/opt/grandhub-v3/worktrees/TASK-20260314-GH20/services/telegram-bot",
+  "startedAt": "2026-03-14T15:02:39.229Z",
+  "updatedAt": "2026-03-14T15:07:49.578Z"
+}

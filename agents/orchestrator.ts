@@ -371,6 +371,84 @@ async function runTask(entry: QueueEntry, queue: QueueEntry[]): Promise<void> {
 
   const coderScript = path.join(CONFIG.scriptDir, 'run-coder.sh');
 
+  // ─── V2 Orchestrator routing ──────────────────────────────────────────────
+  // Если задача помечена use_v2_orchestrator или имеет высокую сложность,
+  // маршрутизируем через orchestrator-v2 (LLM декомпозиция на SubTasks)
+  let useV2 = false;
+  try {
+    const specData = JSON.parse(fs.readFileSync(entry.spec_file, 'utf8'));
+    useV2 = specData.use_v2_orchestrator === true
+      || specData.estimated_complexity === 'complex'
+      || specData.estimated_complexity === 'epic';
+  } catch { /* ok — fallback to coder */ }
+
+  if (useV2) {
+    console.error(`[orchestrator] 🧠 V2 routing: ${entry.task_id} → orchestrator-v2.ts`);
+    let specData: any = {};
+    try { specData = JSON.parse(fs.readFileSync(entry.spec_file, 'utf8')); } catch { /* ok */ }
+    const v2Script = path.join(__dirname, 'orchestrator-v2.ts');
+    const v2Args = [
+      'ts-node', v2Script,
+      '--title', specData.title ?? entry.task_id,
+      '--service', specData.service ?? 'unknown',
+      '--description', (specData.description ?? '').slice(0, 2000),
+    ];
+    if (specData.github_issue?.number) {
+      v2Args.push('--github-issue', String(specData.github_issue.number));
+    }
+
+    const { exitCode: v2Exit, stderr: v2Stderr } = await new Promise<{ exitCode: number; stderr: string }>((resolve) => {
+      const stderrChunks: Buffer[] = [];
+      const child = spawn('npx', v2Args, {
+        cwd: path.resolve(__dirname, '..'),
+        stdio: ['ignore', 'inherit', 'pipe'],
+        timeout: 45 * 60 * 1000,
+      });
+      child.stderr.on('data', (chunk: Buffer) => {
+        stderrChunks.push(chunk);
+        process.stderr.write(chunk);
+      });
+      child.on('exit', (code) => resolve({ exitCode: code ?? 1, stderr: Buffer.concat(stderrChunks).toString('utf8') }));
+      child.on('error', (err) => resolve({ exitCode: 1, stderr: err.message }));
+    });
+
+    // Логируем
+    fs.mkdirSync(CONFIG.logsDir, { recursive: true });
+    fs.appendFileSync(
+      path.join(CONFIG.logsDir, `${entry.task_id}.log`),
+      `\n=== Orchestrator-v2 run ${new Date().toISOString()} ===\n${v2Stderr}`
+    );
+
+    queue[idx].finished_at = new Date().toISOString();
+    if (v2Exit === 0) {
+      queue[idx].status = 'done';
+      queue[idx].result = 'success';
+      console.error(`[orchestrator] ✅ ${entry.task_id} — V2 DONE`);
+      metrics.tasksCompleted++;
+      metrics.totalDurationMs += queue[idx].finished_at && queue[idx].started_at
+        ? new Date(queue[idx].finished_at!).getTime() - new Date(queue[idx].started_at!).getTime()
+        : 0;
+      metrics.lastTaskId = entry.task_id;
+      metrics.lastTaskAt = new Date().toISOString();
+      metrics.currentTask = null;
+      persistMetrics();
+      notifyCompletion(entry, 'done', { verdict: 'v2-orchestrated' });
+      ghComment((entry as any).github_issue, `✅ **Задача выполнена через Orchestrator V2 (LLM декомпозиция)**\n**Задача:** ${entry.task_id}`);
+    } else {
+      queue[idx].status = 'failed';
+      queue[idx].result = 'escalated';
+      console.error(`[orchestrator] ❌ ${entry.task_id} — V2 FAILED`);
+      metrics.tasksFailed++;
+      metrics.currentTask = null;
+      persistMetrics();
+      notifyCompletion(entry, 'failed', { error: 'orchestrator-v2 failed' });
+      addToDLQ(entry, 'failed', 'orchestrator-v2 exited with non-zero');
+      ghComment((entry as any).github_issue, `❌ **Orchestrator V2 не смог выполнить задачу**\n**Задача:** ${entry.task_id}`);
+    }
+    saveQueue(queue);
+    return;
+  }
+
   // Concurrency safety: один активный task на сервис
   let serviceId = 'unknown';
   try {

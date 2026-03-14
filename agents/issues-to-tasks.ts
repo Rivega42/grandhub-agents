@@ -150,7 +150,7 @@ function issueToTaskSpec(issue: any): any {
   const type = detectType(issue);
   const taskId = `TASK-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-GH${issue.number}`;
 
-  return {
+  const spec: any = {
     task_id: taskId,
     // Если title уже содержит conventional commit prefix — не дублируем
     title: /^(feat|fix|chore|refactor|docs|test)\(/.test(issue.title)
@@ -174,6 +174,20 @@ function issueToTaskSpec(issue: any): any {
       author: issue.user?.login,
     },
   };
+
+  // ─── Эвристика сложности: маршрутизация через orchestrator-v2 ─────────────
+  const complexityKeywords = ['рефакторинг', 'архитектура', 'redesign', 'полностью переписать', 'новый модуль'];
+  const titleLower = (issue.title ?? '').toLowerCase();
+  const descLength = (issue.body ?? '').length;
+  const isComplex = descLength > 500
+    || complexityKeywords.some(kw => titleLower.includes(kw));
+  if (isComplex) {
+    spec.use_v2_orchestrator = true;
+    spec.estimated_complexity = 'complex';
+    console.error(`[issues] #${issue.number} → V2 orchestrator (complex: desc=${descLength} chars)`);
+  }
+
+  return spec;
 }
 
 // ─── Processed issues tracking ────────────────────────────────────────────────

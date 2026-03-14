@@ -1,0 +1,8 @@
+{
+  "taskId": "TASK-20260314-GH34",
+  "phase": "escalated",
+  "attempt": 1,
+  "worktreePath": "/opt/grandhub-v3/worktrees/TASK-20260314-GH34/services/grandhub-agents",
+  "startedAt": "2026-03-14T17:06:12.832Z",
+  "updatedAt": "2026-03-14T17:06:13.103Z"
+}

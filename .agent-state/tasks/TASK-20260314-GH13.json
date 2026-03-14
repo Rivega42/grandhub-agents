@@ -1,0 +1,8 @@
+{
+  "taskId": "TASK-20260314-GH13",
+  "phase": "eval_test",
+  "attempt": 1,
+  "worktreePath": "/opt/grandhub-v3/worktrees/TASK-20260314-GH13/services/skill-registry",
+  "startedAt": "2026-03-14T13:08:41.108Z",
+  "updatedAt": "2026-03-14T13:10:38.151Z"
+}

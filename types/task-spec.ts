@@ -86,6 +86,7 @@ export interface TaskSpec {
 
   /** Если true — провал тестов не блокирует коммит (pre-existing failures) */
   allow_test_failure?: boolean;
+  use_v2_orchestrator?: boolean;
 
   /** Лимит бюджета на API вызовы в USD */
   cost_budget_usd: number;

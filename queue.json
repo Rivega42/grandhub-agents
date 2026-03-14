@@ -38,7 +38,7 @@
     "added_at": "2026-03-14T09:14:35.663Z",
     "github_issue": 3,
     "review_attempts": 1,
-    "review_feedback": "Reviewer \u0432\u0435\u0440\u043d\u0443\u043b: request_changes (score: 50/100)\n\n\u041f\u0440\u043e\u0431\u043b\u0435\u043c\u044b:\n[major] N/A: Diff \u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u0435\u043d \u2014 \u043d\u0435\u0432\u043e\u0437\u043c\u043e\u0436\u043d\u043e \u0432\u0435\u0440\u0438\u0444\u0438\u0446\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u044f \u2192 \u041f\u0440\u0435\u0434\u043e\u0441\u0442\u0430\u0432\u0438\u0442\u044c git diff \u0438\u043b\u0438 \u043b\u043e\u0433 \u0432\u044b\u043f\u043e\u043b\u043d\u0435\u043d\u043d\u044b\u0445 systemctl \u043a\u043e\u043c\u0430\u043d\u0434\n[major] N/A: Eval \u043f\u0440\u043e\u0432\u0435\u0440\u044f\u0435\u0442 api-gateway \u043a\u043e\u0434, \u043d\u043e \u0437\u0430\u0434\u0430\u0447\u0430 \u043f\u0440\u043e systemd \u0438\u043d\u0444\u0440\u0430\u0441\u0442\u0440\u0443\u043a\u0442\u0443\u0440\u0443 \u2192 \u0414\u043e\u0431\u0430\u0432\u0438\u0442\u044c \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0443: systemctl is-enabled grandbazar-*.service \u0434\u043e\u043b\u0436\u0435\u043d \u0432\u043e\u0437\u0432\u0440\u0430\u0449\u0430\u0442\u044c disabled/not-found \u0434\u043b\u044f \u0432\u0441\u0435\u0445 4 \u044e\u043d\u0438\u0442\u043e\u0432",
+    "review_feedback": "Reviewer вернул: request_changes (score: 50/100)\n\nПроблемы:\n[major] N/A: Diff недоступен — невозможно верифицировать изменения → Предоставить git diff или лог выполненных systemctl команд\n[major] N/A: Eval проверяет api-gateway код, но задача про systemd инфраструктуру → Добавить проверку: systemctl is-enabled grandbazar-*.service должен возвращать disabled/not-found для всех 4 юнитов",
     "started_at": "2026-03-14T09:48:45.065Z",
     "finished_at": "2026-03-14T09:48:46.793Z",
     "result": "success",
@@ -95,7 +95,7 @@
     "added_at": "2026-03-14T10:50:54.753Z",
     "github_issue": 10,
     "review_attempts": 1,
-    "review_feedback": "Reviewer \u0432\u0435\u0440\u043d\u0443\u043b: request_changes (score: 30/100)\n\n\u041f\u0440\u043e\u0431\u043b\u0435\u043c\u044b:\n[critical] services/skill-registry/: Eval \u0437\u0430\u043f\u0443\u0449\u0435\u043d \u043d\u0430 \u043d\u0435\u043f\u0440\u0430\u0432\u0438\u043b\u044c\u043d\u043e\u043c \u0441\u0435\u0440\u0432\u0438\u0441\u0435: telegram-bot \u0432\u043c\u0435\u0441\u0442\u043e skill-registry \u2192 \u041f\u0435\u0440\u0435\u0437\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u044c eval \u043d\u0430 \u043f\u0440\u0430\u0432\u0438\u043b\u044c\u043d\u043e\u043c \u0441\u0435\u0440\u0432\u0438\u0441\u0435: services/skill-registry/\n[critical] services/skill-registry/prisma/schema.prisma: \u041d\u0435\u0442 diff \u2014 \u043d\u0435\u0432\u043e\u0437\u043c\u043e\u0436\u043d\u043e \u043f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c \u0434\u043e\u0431\u0430\u0432\u043b\u0435\u043d\u044b \u043b\u0438 \u043f\u043e\u043b\u044f \u0432 \u043c\u043e\u0434\u0435\u043b\u044c AiSkill \u2192 \u041f\u0440\u0435\u0434\u043e\u0441\u0442\u0430\u0432\u0438\u0442\u044c git diff \u0438\u043b\u0438 \u0441\u043f\u0438\u0441\u043e\u043a \u0438\u0437\u043c\u0435\u043d\u0451\u043d\u043d\u044b\u0445 \u0444\u0430\u0439\u043b\u043e\u0432\n[critical] services/skill-registry/prisma/migrations/: \u041d\u0435 \u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u043e \u0441\u043e\u0437\u0434\u0430\u043d\u0438\u0435 \u043c\u0438\u0433\u0440\u0430\u0446\u0438\u0438 \u2192 \u041f\u043e\u043a\u0430\u0437\u0430\u0442\u044c \u0441\u043e\u0437\u0434\u0430\u043d\u043d\u044b\u0439 \u0444\u0430\u0439\u043b \u043c\u0438\u0433\u0440\u0430\u0446\u0438\u0438 \u0438 \u0440\u0435\u0437\u0443\u043b\u044c\u0442\u0430\u0442 prisma migrate\n[major] N/A: \u041e\u043f\u0438\u0441\u0430\u043d\u0438\u0435 \u0437\u0430\u0434\u0430\u0447\u0438 \u043e\u0431\u0440\u0435\u0437\u0430\u043d\u043e \u2014 \u043d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u044b \u0442\u0440\u0435\u0431\u0443\u0435\u043c\u044b\u0435 \u043f\u043e\u043b\u044f \u2192 \u041f\u0440\u0435\u0434\u043e\u0441\u0442\u0430\u0432\u0438\u0442\u044c \u043f\u043e\u043b\u043d\u043e\u0435 \u043e\u043f\u0438\u0441\u0430\u043d\u0438\u0435 issue #10 \u0441 \u043f\u0435\u0440\u0435\u0447\u043d\u0435\u043c \u043f\u043e\u043b\u0435\u0439",
+    "review_feedback": "Reviewer вернул: request_changes (score: 30/100)\n\nПроблемы:\n[critical] services/skill-registry/: Eval запущен на неправильном сервисе: telegram-bot вместо skill-registry → Перезапустить eval на правильном сервисе: services/skill-registry/\n[critical] services/skill-registry/prisma/schema.prisma: Нет diff — невозможно проверить добавлены ли поля в модель AiSkill → Предоставить git diff или список изменённых файлов\n[critical] services/skill-registry/prisma/migrations/: Не подтверждено создание миграции → Показать созданный файл миграции и результат prisma migrate\n[major] N/A: Описание задачи обрезано — неизвестны требуемые поля → Предоставить полное описание issue #10 с перечнем полей",
     "started_at": "2026-03-14T10:54:38.750Z",
     "finished_at": "2026-03-14T11:02:17.198Z",
     "result": "escalated"
@@ -103,15 +103,262 @@
   {
     "task_id": "TASK-20260314-GH11",
     "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH11-spec.json",
-    "status": "running",
+    "status": "done",
     "added_at": "2026-03-14T12:18:39.516Z",
     "github_issue": 11,
-    "started_at": "2026-03-14T12:18:39.543Z",
-    "service": "assistant-runtime",
-    "service_path": "/opt/grandhub-v3/services/assistant-runtime",
-    "file_scope": [
-      "src/services/prompt-builder.ts",
-      "src/routes/messages.ts"
-    ]
+    "review_attempts": 1,
+    "review_feedback": "Reviewer вернул: request_changes (score: 50/100)\n\nПроблемы:\n[critical] N/A: Diff недоступен для ревью. Невозможно оценить: качество типов, минимальность изменений, читаемость кода, соответствие задаче. → Предоставить git diff или путь к репозиторию для полноценного ревью",
+    "started_at": "2026-03-14T12:20:39.834Z",
+    "finished_at": "2026-03-14T12:23:17.116Z",
+    "result": "success",
+    "score": 92
+  },
+  {
+    "task_id": "TASK-20260314-GH12",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH12-spec.json",
+    "status": "done",
+    "added_at": "2026-03-14T13:04:40.184Z",
+    "github_issue": 12,
+    "started_at": "2026-03-14T13:04:40.215Z",
+    "result": "success"
+  },
+  {
+    "task_id": "TASK-20260314-GH15",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH15-spec.json",
+    "status": "done",
+    "added_at": "2026-03-14T13:06:10.073Z",
+    "github_issue": 15,
+    "review_attempts": 2,
+    "review_feedback": "Reviewer вернул: request_changes (score: 58/100)\n\nПроблемы:\n[major] services/telegram-bot/src/handlers/message.ts: Избыточный рефакторинг: удалено ~180 строк кода (voice/audio/photo handling, mood, nudge, typing indicator, API calls). Импортируется processAIMessage из ai-router.ts который отсутствует в diff. → Либо включить ai-router.ts в коммит если это рефакторинг, либо вынести рефакторинг в отдельный PR. Задача была только добавить /settings.\n[major] services/telegram-bot/src/handlers/message.ts: Импорт несуществующих функций: handleSettingsTextInput и isInSettingsEdit. В settings.ts экспортируются handleSettingsNameInput и isAwaitingSettingsInput. → Добавить алиасы экспорта в settings.ts или исправить имена импортов: import { handleSettingsNameInput as handleSettingsTextInput, isAwaitingSettingsInput as isInSettingsEdit }",
+    "started_at": "2026-03-14T13:51:05.514Z",
+    "finished_at": "2026-03-14T13:55:05.761Z",
+    "result": "success",
+    "score": 78
+  },
+  {
+    "task_id": "TASK-20260314-GH14",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH14-spec.json",
+    "status": "done",
+    "added_at": "2026-03-14T13:06:10.073Z",
+    "github_issue": 14,
+    "started_at": "2026-03-14T13:06:38.105Z",
+    "finished_at": "2026-03-14T13:08:37.914Z",
+    "result": "success",
+    "score": 70
+  },
+  {
+    "task_id": "TASK-20260314-GH13",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH13-spec.json",
+    "status": "failed",
+    "added_at": "2026-03-14T13:06:10.074Z",
+    "github_issue": 13,
+    "started_at": "2026-03-14T13:08:38.935Z",
+    "finished_at": "2026-03-14T13:11:41.566Z",
+    "result": "escalated"
+  },
+  {
+    "task_id": "TASK-20260314-GH16",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH16-spec.json",
+    "status": "done",
+    "added_at": "2026-03-14T14:08:05.574Z",
+    "github_issue": 16,
+    "started_at": "2026-03-14T14:08:05.609Z",
+    "finished_at": "2026-03-14T14:10:35.623Z",
+    "result": "success",
+    "score": 88
+  },
+  {
+    "task_id": "TASK-20260314-GH21",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH21-spec.json",
+    "status": "done",
+    "added_at": "2026-03-14T15:01:05.867Z",
+    "github_issue": 21,
+    "started_at": "2026-03-14T15:01:05.900Z",
+    "finished_at": "2026-03-14T15:02:35.937Z",
+    "result": "success",
+    "score": 95
+  },
+  {
+    "task_id": "TASK-20260314-GH20",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH20-spec.json",
+    "status": "done",
+    "added_at": "2026-03-14T15:01:05.867Z",
+    "github_issue": 20,
+    "started_at": "2026-03-14T16:30:37.124Z",
+    "finished_at": "2026-03-14T16:30:38.738Z",
+    "result": "success",
+    "score": 92
+  },
+  {
+    "task_id": "TASK-20260314-GH19",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH19-spec.json",
+    "status": "done",
+    "added_at": "2026-03-14T15:01:05.868Z",
+    "github_issue": 19,
+    "started_at": "2026-03-14T15:03:08.097Z",
+    "finished_at": "2026-03-14T15:05:17.451Z",
+    "result": "success",
+    "score": 70
+  },
+  {
+    "task_id": "TASK-20260314-GH18",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH18-spec.json",
+    "status": "failed",
+    "added_at": "2026-03-14T15:01:05.868Z",
+    "github_issue": 18,
+    "started_at": "2026-03-14T15:05:18.678Z",
+    "finished_at": "2026-03-14T15:27:18.680Z",
+    "result": "escalated"
+  },
+  {
+    "task_id": "TASK-20260314-GH17",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH17-spec.json",
+    "status": "done",
+    "added_at": "2026-03-14T15:01:05.869Z",
+    "github_issue": 17,
+    "started_at": "2026-03-14T16:30:39.980Z",
+    "finished_at": "2026-03-14T16:30:41.644Z",
+    "result": "success",
+    "score": 78
+  },
+  {
+    "task_id": "TASK-20260314-GH23",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH23-spec.json",
+    "status": "done",
+    "added_at": "2026-03-14T15:29:08.369Z",
+    "github_issue": 23,
+    "started_at": "2026-03-14T16:30:42.706Z",
+    "finished_at": "2026-03-14T16:33:48.119Z",
+    "result": "success",
+    "score": 92
+  },
+  {
+    "task_id": "TASK-20260314-GH22",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH22-spec.json",
+    "status": "done",
+    "added_at": "2026-03-14T15:29:08.369Z",
+    "github_issue": 22,
+    "started_at": "2026-03-14T16:57:20.736Z",
+    "finished_at": "2026-03-14T16:57:22.436Z",
+    "result": "success",
+    "score": 92
+  },
+  {
+    "task_id": "TASK-20260314-GH27",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH27-spec.json",
+    "status": "done",
+    "added_at": "2026-03-14T15:36:10.425Z",
+    "github_issue": 27,
+    "started_at": "2026-03-14T15:36:10.458Z",
+    "finished_at": "2026-03-14T15:37:45.458Z",
+    "result": "success",
+    "score": 92
+  },
+  {
+    "task_id": "TASK-20260314-GH26",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH26-spec.json",
+    "status": "done",
+    "added_at": "2026-03-14T15:36:10.426Z",
+    "github_issue": 26,
+    "started_at": "2026-03-14T16:57:23.698Z",
+    "finished_at": "2026-03-14T16:57:25.329Z",
+    "result": "success",
+    "score": 93
+  },
+  {
+    "task_id": "TASK-20260314-GH25",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH25-spec.json",
+    "status": "done",
+    "added_at": "2026-03-14T15:36:10.426Z",
+    "github_issue": 25,
+    "started_at": "2026-03-14T15:45:04.332Z",
+    "finished_at": "2026-03-14T15:45:06.016Z",
+    "result": "success",
+    "score": 82
+  },
+  {
+    "task_id": "TASK-20260314-GH24",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH24-spec.json",
+    "status": "done",
+    "added_at": "2026-03-14T15:36:10.427Z",
+    "github_issue": 24,
+    "started_at": "2026-03-14T15:44:35.784Z",
+    "finished_at": "2026-03-14T15:44:37.365Z",
+    "result": "success",
+    "score": 92
+  },
+  {
+    "task_id": "TASK-20260314-GH28",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH28-spec.json",
+    "status": "failed",
+    "added_at": "2026-03-14T15:51:38.915Z",
+    "github_issue": 28,
+    "review_attempts": 1,
+    "review_feedback": "Reviewer вернул: request_changes (score: 50/100)\n\nПроблемы:\n[major] agents/orchestrator.ts: Diff и исходный файл недоступны для review → Предоставить git diff или доступ к изменённому файлу для полноценной проверки",
+    "started_at": "2026-03-14T15:52:39.098Z",
+    "finished_at": "2026-03-14T15:54:55.765Z",
+    "result": "escalated"
+  },
+  {
+    "task_id": "TASK-20260314-GH31",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH31-spec.json",
+    "status": "done",
+    "added_at": "2026-03-14T16:19:02.246Z",
+    "github_issue": 31,
+    "started_at": "2026-03-14T16:19:02.286Z",
+    "finished_at": "2026-03-14T16:20:02.819Z",
+    "result": "success",
+    "score": 70
+  },
+  {
+    "task_id": "TASK-20260314-GH30",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH30-spec.json",
+    "status": "done",
+    "added_at": "2026-03-14T16:19:02.247Z",
+    "github_issue": 30,
+    "started_at": "2026-03-14T16:57:26.330Z",
+    "finished_at": "2026-03-14T16:57:27.875Z",
+    "result": "success",
+    "score": 92
+  },
+  {
+    "task_id": "TASK-20260314-GH29",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH29-spec.json",
+    "status": "failed",
+    "added_at": "2026-03-14T16:19:02.248Z",
+    "github_issue": 29,
+    "finished_at": "2026-03-14T17:00:03.103Z",
+    "result": "escalated",
+    "started_at": "2026-03-14T16:59:10.072Z"
+  },
+  {
+    "task_id": "TASK-20260314-GH32",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH32-spec.json",
+    "status": "failed",
+    "added_at": "2026-03-14T16:27:32.656Z",
+    "github_issue": 32,
+    "started_at": "2026-03-14T16:27:32.703Z",
+    "finished_at": "2026-03-14T16:30:00.799Z",
+    "result": "escalated"
+  },
+  {
+    "task_id": "TASK-20260314-GH33",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH33.json",
+    "status": "failed",
+    "added_at": "2026-03-14T17:05:37.631395Z",
+    "github_issue": 33,
+    "started_at": "2026-03-14T17:06:07.414Z",
+    "finished_at": "2026-03-14T17:06:09.740Z",
+    "result": "escalated"
+  },
+  {
+    "task_id": "TASK-20260314-GH34",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH34.json",
+    "status": "failed",
+    "added_at": "2026-03-14T17:05:37.631523Z",
+    "github_issue": 34,
+    "started_at": "2026-03-14T17:06:10.824Z",
+    "finished_at": "2026-03-14T17:06:13.188Z",
+    "result": "escalated"
   }
 ]
