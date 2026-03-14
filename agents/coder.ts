@@ -346,11 +346,29 @@ export async function runCoder(taskFile: string, dryRun = false): Promise<boolea
 
     auditLog(task.task_id, { agent_role: 'coder', action: 'file_read', details: { context: ctxResult.context_file } });
 
-    // 4. Батчинг file_scope — максимум BATCH_SIZE файлов за один LLM вызов
+    // 4. Батчинг file_scope — если пустой, auto-discover из директории сервиса
     const BATCH_SIZE = 4;
+    let effectiveScope = [...task.file_scope];
+    if (effectiveScope.length === 0) {
+      const walkDir = (dir: string, base: string): string[] => {
+        const skip = new Set(['node_modules','dist','coverage','.turbo','__tests__']);
+        try {
+          return fs.readdirSync(dir).flatMap((f: string) => {
+            const full = path.join(dir, f);
+            if (fs.statSync(full).isDirectory()) return skip.has(f) ? [] : walkDir(full, base);
+            if ((f.endsWith('.ts') || f.endsWith('.js')) && !f.includes('.test.') && !f.includes('.spec.')) {
+              return [path.relative(base, full)];
+            }
+            return [];
+          });
+        } catch { return []; }
+      };
+      effectiveScope = walkDir(worktreePath, worktreePath).slice(0, 10);
+      console.error('[coder] Auto file_scope:', effectiveScope.join(', '));
+    }
     const fileBatches: string[][] = [];
-    for (let i = 0; i < task.file_scope.length; i += BATCH_SIZE) {
-      fileBatches.push(task.file_scope.slice(i, i + BATCH_SIZE));
+    for (let i = 0; i < effectiveScope.length; i += BATCH_SIZE) {
+      fileBatches.push(effectiveScope.slice(i, i + BATCH_SIZE));
     }
     console.error(`[coder] 📦 Батчей: ${fileBatches.length} (${BATCH_SIZE} файлов макс)`);
 
