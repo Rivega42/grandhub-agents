@@ -85,14 +85,15 @@ else
 fi
 
 # 4. Файлы из file_scope TaskSpec (если пусто — берём все TS файлы сервиса)
-FILE_SCOPE=$(python3 - << 'PYEOF'
+FILE_SCOPE=$(python3 -c "
 import json, os, sys
-
+task_file = sys.argv[1]
+repo_root = sys.argv[2]
 try:
-    d = json.load(open(sys.argv[1]))
+    d = json.load(open(task_file))
     files = d.get('file_scope', [])
     if not files:
-        svc_dir = os.path.join(sys.argv[2], 'services', d.get('service',''))
+        svc_dir = os.path.join(repo_root, 'services', d.get('service',''))
         for root, dirs, filenames in os.walk(svc_dir):
             dirs[:] = [x for x in dirs if x not in ['node_modules','dist','coverage','.turbo','__tests__']]
             for fname in filenames:
@@ -103,8 +104,7 @@ try:
     print('\n'.join(files))
 except Exception as e:
     pass
-PYEOF
-${TASK_FILE} ${REPO_ROOT} 2>/dev/null)
+" "${TASK_FILE}" "${REPO_ROOT}" 2>/dev/null)
 
 REMAINING_TOKENS=$((MAX_TOKENS - TOTAL_TOKENS))
 echo 1>&2 "Осталось токенов для файлов: ~${REMAINING_TOKENS}"
