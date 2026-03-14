@@ -417,6 +417,15 @@ async function watchMode(): Promise<void> {
 
   const tick = (): void => {
     if (isShuttingDown) return;
+    // Сначала синхронно подтягиваем новые issues → задачи
+    try {
+      const issuesScript = path.join(CONFIG.scriptDir, 'agents/issues-to-tasks.ts');
+      spawnSync(
+        'node_modules/.bin/ts-node',
+        [issuesScript],
+        { cwd: path.join(CONFIG.scriptDir), stdio: 'inherit', timeout: 60_000 }
+      );
+    } catch { /* ignore */ }
     const queue = loadQueue();
     const pending = pendingTasks(queue);
     if (pending.length > 0) {
