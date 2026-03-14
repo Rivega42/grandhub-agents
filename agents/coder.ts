@@ -611,6 +611,21 @@ export async function runCoder(taskFile: string, dryRun = false, reviewFeedbackF
           // Создаём PR через gh CLI
           try {
             const wtRoot = path.dirname(worktreePath);
+            // Rebase на актуальный main перед push — избегаем конфликтов
+            spawnSync('git', ['fetch', 'origin', 'main'], {
+              encoding: 'utf8', cwd: wtRoot,
+              env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }, timeout: 30000,
+            });
+            const rebaseResult = spawnSync('git', ['rebase', 'origin/main'], {
+              encoding: 'utf8', cwd: wtRoot,
+              env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }, timeout: 30000,
+            });
+            if (rebaseResult.status !== 0) {
+              console.error('[coder] ⚠️  Rebase конфликт:', (rebaseResult.stderr ?? '').slice(0, 200));
+              spawnSync('git', ['rebase', '--abort'], { encoding: 'utf8', cwd: wtRoot, timeout: 10000 });
+            } else {
+              console.error('[coder] ✅ Rebase на origin/main успешен');
+            }
             // Пушим ветку
             spawnSync('git', ['push', 'origin', `agent/${task.task_id}`, '--force'], {
               encoding: 'utf8', cwd: wtRoot,
