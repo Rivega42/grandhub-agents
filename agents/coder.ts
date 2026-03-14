@@ -312,7 +312,9 @@ export async function runCoder(taskFile: string, dryRun = false, reviewFeedbackF
   }
 
   const task: TaskSpec = JSON.parse(fs.readFileSync(taskFile, 'utf8'));
-  const serviceDir = path.join(CONFIG.repoRoot, 'services', task.service);
+  const serviceDir = task.service === 'grandhub-agents'
+    ? '/opt/grandhub-agents'
+    : path.join(CONFIG.repoRoot, 'services', task.service);
 
   const log = createLogger(task.task_id);
   console.error(`\n[coder] 🚀 Задача: ${task.task_id} — ${task.title}`);

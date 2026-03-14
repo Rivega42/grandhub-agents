@@ -89,13 +89,14 @@ function detectService(issue: any): string {
   const exactServices = [
     'assistant-runtime', 'skill-registry', 'api-gateway', 'auth', 'billing',
     'telegram-bot', 'websocket', 'memory', 'notifications', 'usage', 'analytics',
-    'marketplace', 'moderation', 'voice', 'workflow-engine',
+    'marketplace', 'moderation', 'voice', 'workflow-engine', 'grandhub-agents',
   ];
   for (const svc of exactServices) {
     if (textSearch.includes(svc)) return svc;
   }
 
   const textServiceMap: Record<string,string> = {
+    'gha': 'grandhub-agents', 'оркестратор': 'grandhub-agents', 'orchestrator': 'grandhub-agents', 'coder': 'grandhub-agents', 'tester': 'grandhub-agents', 'llm-planner': 'grandhub-agents', 'llm planner': 'grandhub-agents',
     'ассистент': 'assistant-runtime', 'assistant': 'assistant-runtime', 'prompt-builder': 'assistant-runtime', 'flowconfig': 'assistant-runtime', 'системный промпт': 'assistant-runtime',
     'telegram': 'telegram-bot', 'bot': 'telegram-bot',
     'billing': 'billing', 'биллинг': 'billing', 'robokassa': 'billing', 'оплат': 'billing',
