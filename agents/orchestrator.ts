@@ -83,6 +83,25 @@ function notifyCompletion(entry: QueueEntry, status: 'done' | 'failed' | 'review
 
 
 
+
+// ─── Комментарий в GitHub Issue ──────────────────────────────────────────────
+function ghComment(issueNumber: number | undefined, body: string): void {
+  if (!issueNumber || !process.env.GITHUB_TOKEN) return;
+  const r = spawnSync('gh', ['issue', 'comment', String(issueNumber),
+    '--repo', 'Rivega42/grandhub-feedback',
+    '--body', body,
+  ], {
+    encoding: 'utf8',
+    env: { ...process.env, GH_TOKEN: process.env.GITHUB_TOKEN },
+    timeout: 15000,
+  });
+  if (r.status === 0) {
+    console.error(`[orchestrator] 💬 Comment posted → issue #${issueNumber}`);
+  } else {
+    console.error(`[orchestrator] ⚠️  gh comment failed: ${(r.stderr ?? '').slice(0, 100)}`);
+  }
+}
+
 // ─── Очередь ──────────────────────────────────────────────────────────────────
 
 function loadQueue(): QueueEntry[] {
@@ -152,6 +171,15 @@ function runTask(entry: QueueEntry, queue: QueueEntry[]): void {
         if (prEntry) prUrl = (prEntry as string).replace('PR: ', '').trim();
       } catch { /* ignore */ }
       notifyCompletion(entry, 'done', { score: reviewScore, verdict: 'approved', pr_url: prUrl });
+      // Комментарий в issue
+      const doneBody = [
+        `✅ **Задача выполнена агентом GHA**`,
+        ``,
+        `**Score:** ${reviewScore}/100 (Reviewer одобрил)`,
+        prUrl ? `**PR:** ${prUrl}` : '',
+        `**Задача:** ${entry.task_id}`,
+      ].filter(Boolean).join('\n');
+      ghComment((entry as any).github_issue, doneBody);
     } else {
       queue[idx].status = 'done';
       queue[idx].result = 'reviewer_rejected';
@@ -174,6 +202,15 @@ function runTask(entry: QueueEntry, queue: QueueEntry[]): void {
     }
 
     notifyCompletion(entry, 'failed', { error: lastError?.slice(0, 300) });
+    // Комментарий в issue
+    const failBody = [
+      `❌ **Агент GHA не смог выполнить задачу**`,
+      ``,
+      lastError ? `**Ошибка:** ${lastError.slice(0, 300)}` : '',
+      `**Задача:** ${entry.task_id}`,
+      `Нужно ручное вмешательство.`,
+    ].filter(Boolean).join('\n');
+    ghComment((entry as any).github_issue, failBody);
   }
 
   saveQueue(queue);
