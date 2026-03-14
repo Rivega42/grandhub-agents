@@ -273,7 +273,7 @@ function startHealthServer(): void {
         `gha_queue_pending ${taskQueue.size}`,
         `# HELP gha_queue_running Running tasks right now`,
         `# TYPE gha_queue_running gauge`,
-        `gha_queue_running ${queue.filter((e: any) => e.status === 'running').length}`,
+        `gha_queue_running ${loadQueue().filter((e: any) => e.status === "running").length}`,
       ].join('\n');
       res.writeHead(200, { 'Content-Type': 'text/plain; version=0.0.4' });
       res.end(lines + '\n');
@@ -677,6 +677,24 @@ async function watchMode(): Promise<void> {
   console.error('[orchestrator] 🤖 GHA Orchestrator запущен (watch режим)');
   startHealthServer();
   startWatchdog();
+
+  // Recovery: сброс running задач в pending при старте (issue #32)
+  {
+    const queue = loadQueue();
+    let recovered = 0;
+    for (const entry of queue) {
+      if (entry.status === 'running') {
+        entry.status = 'pending';
+        delete (entry as any).started_at;
+        console.error(`[orchestrator] Recovery: сбрасываю зависшую задачу ${entry.task_id} → pending`);
+        recovered++;
+      }
+    }
+    if (recovered > 0) {
+      saveQueue(queue);
+      console.error(`[orchestrator] 🔄 Recovery: сброшено ${recovered} running → pending`);
+    }
+  }
 
   // Crash recovery: незавершённые задачи из предыдущего запуска
   try {
