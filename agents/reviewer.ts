@@ -42,7 +42,7 @@ const CONFIG = {
   stateDir:     path.resolve(__dirname, '../.agent-state'),
   logsDir:      path.resolve(__dirname, '../.agent-logs'),
   repoRoot:     process.env.GRANDHUB_ROOT ?? '/opt/grandhub-v3',
-  model:        'google/gemini-2.0-flash-001',
+  model:        'anthropic/claude-opus-4-5',
   openrouterKey: process.env.OPENROUTER_API_KEY ?? '',
 } as const;
 
