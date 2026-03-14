@@ -35,6 +35,10 @@ const CONFIG = {
     'notifications':     'notifications',
     'assistant-runtime': 'assistant-runtime',
     'websocket':         'websocket',
+    'telegram-bot':      'telegram-bot',
+    'billing':           'billing',
+    'usage':             'usage',
+    'analytics':         'analytics',
   } as Record<string, string>,
   defaultService: 'api-gateway',
 } as const;
@@ -78,6 +82,16 @@ function detectService(issue: any): string {
     if (labels.includes(label)) return service;
   }
   // По тексту
+  // Дополнительный поиск по тексту тайтла/тела
+  const textSearch = (title + ' ' + body).toLowerCase();
+  const textServiceMap: Record<string,string> = {
+    'telegram': 'telegram-bot', 'бот': 'telegram-bot', 'bot': 'telegram-bot',
+    'billing': 'billing', 'биллинг': 'billing', 'robokassa': 'billing', 'оплат': 'billing',
+    'usage': 'usage', 'аналитик': 'analytics', 'analytics': 'analytics',
+  };
+  for (const [keyword, svc] of Object.entries(textServiceMap)) {
+    if (textSearch.includes(keyword)) return svc;
+  }
   for (const service of Object.values(CONFIG.serviceMap)) {
     if (title.includes(service) || body.includes(service)) return service;
   }

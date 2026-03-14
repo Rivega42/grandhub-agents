@@ -9,5 +9,27 @@
     "finished_at": "2026-03-14T07:16:46.616Z",
     "result": "success",
     "score": 95
+  },
+  {
+    "task_id": "TASK-20260314-GH5",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH5-spec.json",
+    "status": "running",
+    "added_at": "2026-03-14T09:14:35.662Z",
+    "github_issue": 5,
+    "started_at": "2026-03-14T09:14:35.697Z"
+  },
+  {
+    "task_id": "TASK-20260314-GH4",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH4-spec.json",
+    "status": "pending",
+    "added_at": "2026-03-14T09:14:35.663Z",
+    "github_issue": 4
+  },
+  {
+    "task_id": "TASK-20260314-GH3",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH3-spec.json",
+    "status": "pending",
+    "added_at": "2026-03-14T09:14:35.663Z",
+    "github_issue": 3
   }
 ]
