@@ -98,6 +98,27 @@ function auditLog(taskId: string, entry: Omit<AuditLogEntry, 'task_id' | 'timest
 // ─── HTTP запрос к OpenRouter ─────────────────────────────────────────────────
 
 async function callLLM(systemPrompt: string, userMessage: string): Promise<string> {
+  const maxRetries = 3;
+  const delays = [0, 5000, 15000, 45000];
+  let lastError: Error = new Error('LLM: no attempts made');
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    if (attempt > 1) {
+      const delayMs = delays[attempt] ?? 45000;
+      console.error(`[coder] LLM retry ${attempt}/${maxRetries} (ждём ${delayMs / 1000}s)...`);
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+    try {
+      return await _callLLMOnce(systemPrompt, userMessage);
+    } catch (e) {
+      lastError = e as Error;
+      console.error(`[coder] LLM attempt ${attempt}/${maxRetries} failed: ${lastError.message}`);
+    }
+  }
+  throw lastError;
+}
+
+async function _callLLMOnce(systemPrompt: string, userMessage: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({
       model: CONFIG.model,
@@ -176,8 +197,18 @@ function parseLLMResponse(raw: string): LLMResponse {
 function applyChanges(changes: FileChange[], serviceDir: string): string[] {
   const applied: string[] = [];
 
+  const safeBase = path.resolve(serviceDir);
+
   for (const change of changes) {
     const fullPath = path.join(serviceDir, change.path);
+    const resolvedFull = path.resolve(fullPath);
+
+    // Path traversal protection
+    if (!resolvedFull.startsWith(safeBase + path.sep) && resolvedFull !== safeBase) {
+      console.error(`[coder] ⛔ Path traversal blocked: ${change.path} → ${resolvedFull}`);
+      continue;
+    }
+
     const dir = path.dirname(fullPath);
 
     if (change.action === 'delete') {
@@ -188,7 +219,10 @@ function applyChanges(changes: FileChange[], serviceDir: string): string[] {
       }
     } else {
       fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(fullPath, change.content, 'utf8');
+      // Атомарная запись через tmp файл
+      const tmpPath = fullPath + '.tmp';
+      fs.writeFileSync(tmpPath, change.content, 'utf8');
+      fs.renameSync(tmpPath, fullPath);
       applied.push(`${change.action.toUpperCase()} ${change.path}`);
       console.error(`[coder] ✏️  ${change.action === 'create' ? 'Создан' : 'Изменён'}: ${change.path}`);
     }

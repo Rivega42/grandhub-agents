@@ -242,9 +242,33 @@ async function runOnce(): Promise<void> {
   console.error('[orchestrator] Все задачи обработаны.');
 }
 
+// ─── Watchdog ─────────────────────────────────────────────────────────────────
+function startWatchdog(): void {
+  const combinedLog = '/opt/grandhub-agents/.agent-logs/combined.jsonl';
+  setInterval(() => {
+    if (!fs.existsSync(combinedLog)) return;
+    const stat = fs.statSync(combinedLog);
+    const silentMinutes = (Date.now() - stat.mtimeMs) / 60_000;
+    if (silentMinutes > 30) {
+      const alert = {
+        alert: 'GHA: нет активности 30+ минут',
+        silentMinutes: Math.round(silentMinutes),
+        ts: new Date().toISOString(),
+      };
+      fs.writeFileSync(
+        '/opt/grandhub-agents/.agent-state/watchdog-alert.json',
+        JSON.stringify(alert, null, 2)
+      );
+      console.error(`[watchdog] ⚠️  Нет активности ${Math.round(silentMinutes)} минут`);
+    }
+  }, 5 * 60_000);
+}
+
+
 async function watchMode(): Promise<void> {
   console.error(`[orchestrator] 👀 Watch режим — проверяю каждые ${CONFIG.watchIntervalMs / 1000}с`);
   console.error('[orchestrator] 🤖 GHA Orchestrator запущен (watch режим)');
+  startWatchdog();
 
   const tick = async () => {
     const queue = loadQueue();
