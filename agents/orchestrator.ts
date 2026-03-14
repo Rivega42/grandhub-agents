@@ -237,6 +237,7 @@ function startHealthServer(): void {
         uptime: Math.round((Date.now() - new Date(metrics.startedAt).getTime()) / 1000),
         startedAt: metrics.startedAt,
         queue: { pending, running, done, failed },
+        running_tasks: queue.filter((e: any) => e.status === 'running').map((e: any) => e.task_id),
         tasks: {
           completed: metrics.tasksCompleted,
           failed: metrics.tasksFailed,
@@ -270,6 +271,9 @@ function startHealthServer(): void {
         `# HELP gha_queue_pending Pending tasks in queue`,
         `# TYPE gha_queue_pending gauge`,
         `gha_queue_pending ${taskQueue.size}`,
+        `# HELP gha_queue_running Running tasks right now`,
+        `# TYPE gha_queue_running gauge`,
+        `gha_queue_running ${queue.filter((e: any) => e.status === 'running').length}`,
       ].join('\n');
       res.writeHead(200, { 'Content-Type': 'text/plain; version=0.0.4' });
       res.end(lines + '\n');
