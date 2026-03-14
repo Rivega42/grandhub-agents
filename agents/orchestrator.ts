@@ -543,6 +543,31 @@ async function runTask(entry: QueueEntry, queue: QueueEntry[]): Promise<void> {
         return;
       }
 
+      // Doc-writer: генерируем документацию после approve
+      try {
+        let taskSpec: any = {};
+        try { taskSpec = JSON.parse(fs.readFileSync(entry.spec_file, 'utf8')); } catch { /* ok */ }
+        const docWriterScript = path.join(__dirname, 'doc-writer.ts');
+        console.error(`[orchestrator] 📖 Запускаю doc-writer для ${entry.task_id}...`);
+        const docResult = spawnSync('npx', ['ts-node', docWriterScript,
+          '--task-id', entry.task_id,
+          '--service', taskSpec.service ?? 'unknown',
+          '--task-file', entry.spec_file,
+        ], {
+          cwd: path.resolve(__dirname, '..'),
+          timeout: 120_000,
+          encoding: 'utf8',
+          env: process.env,
+        });
+        if (docResult.status === 0) {
+          console.error(`[orchestrator] 📖 Doc-writer OK`);
+        } else {
+          console.error(`[orchestrator] ⚠️  Doc-writer failed (non-blocking): ${(docResult.stderr ?? '').slice(0, 200)}`);
+        }
+      } catch (docErr) {
+        console.error(`[orchestrator] ⚠️  Doc-writer error (non-blocking): ${(docErr as Error).message}`);
+      }
+
       queue[idx].status = 'done';
       queue[idx].result = 'success';
       queue[idx].score = reviewScore;
