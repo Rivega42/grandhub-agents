@@ -99,29 +99,46 @@ async function callLLM(systemPrompt: string, userMessage: string): Promise<strin
 // ─── Получение git diff ───────────────────────────────────────────────────────
 
 function getDiff(taskId: string, service: string): string {
-  // Пробуем worktree сначала
+  // 1. Worktree есть — берём git show HEAD (коммит агента)
   const wtPath = path.join(CONFIG.repoRoot, 'worktrees', taskId);
   if (fs.existsSync(wtPath)) {
-    const r = spawnSync('git', ['diff', 'main', '--', `services/${service}/`], {
+    const r = spawnSync('git', ['show', 'HEAD', '--stat', '-p', '--', `services/${service}/`], {
       encoding: 'utf8', cwd: wtPath,
+    });
+    if (r.stdout && r.stdout.length > 50) return r.stdout.slice(0, 20000);
+    // Fallback: diff с main если HEAD пустой
+    const r2 = spawnSync('git', ['diff', 'main..HEAD', '--', `services/${service}/`], {
+      encoding: 'utf8', cwd: wtPath,
+    });
+    if (r2.stdout) return r2.stdout.slice(0, 20000);
+  }
+
+  // 2. Ищем ветку agent/TASK-* в основном репо
+  const branch = `agent/${taskId}`;
+  const branchCheck = spawnSync('git', ['rev-parse', '--verify', branch], {
+    encoding: 'utf8', cwd: CONFIG.repoRoot,
+  });
+  if (branchCheck.status === 0) {
+    const r = spawnSync('git', ['diff', `main...${branch}`, '--', `services/${service}/`], {
+      encoding: 'utf8', cwd: CONFIG.repoRoot,
     });
     if (r.stdout) return r.stdout.slice(0, 20000);
   }
 
-  // Fallback: последний коммит который упоминает taskId
-  const log = spawnSync('git', ['log', '--oneline', '-20'], {
+  // 3. Ищем коммит по taskId в любой ветке
+  const log = spawnSync('git', ['log', '--all', '--oneline', '-30'], {
     encoding: 'utf8', cwd: CONFIG.repoRoot,
   });
   const commitLine = log.stdout.split('\n').find(l => l.includes(taskId));
   if (commitLine) {
     const hash = commitLine.split(' ')[0];
-    const r = spawnSync('git', ['show', `${hash}`, '--stat', '-p', '--', `services/${service}/`], {
+    const r = spawnSync('git', ['show', hash, '--stat', '-p', '--', `services/${service}/`], {
       encoding: 'utf8', cwd: CONFIG.repoRoot,
     });
-    return r.stdout.slice(0, 20000);
+    if (r.stdout) return r.stdout.slice(0, 20000);
   }
 
-  return '(diff недоступен — нет worktree и коммит не найден)';
+  return '(diff недоступен)';
 }
 
 // ─── Парсинг ответа LLM ───────────────────────────────────────────────────────

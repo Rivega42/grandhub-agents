@@ -84,16 +84,27 @@ else
   CONTEXT+="\n# AGENT.md — ${SERVICE}\n⚠️ AGENT.md отсутствует. Изучи код самостоятельно.\n"
 fi
 
-# 4. Файлы из file_scope TaskSpec
-FILE_SCOPE=$(python3 -c "
-import json, sys
+# 4. Файлы из file_scope TaskSpec (если пусто — берём все TS файлы сервиса)
+FILE_SCOPE=$(python3 - << 'PYEOF'
+import json, os, sys
+
 try:
-    d = json.load(open('${TASK_FILE}'))
+    d = json.load(open(sys.argv[1]))
     files = d.get('file_scope', [])
+    if not files:
+        svc_dir = os.path.join(sys.argv[2], 'services', d.get('service',''))
+        for root, dirs, filenames in os.walk(svc_dir):
+            dirs[:] = [x for x in dirs if x not in ['node_modules','dist','coverage','.turbo','__tests__']]
+            for fname in filenames:
+                if fname.endswith(('.ts','.js')) and '.test.' not in fname and '.spec.' not in fname:
+                    rel = os.path.relpath(os.path.join(root, fname), svc_dir)
+                    files.append(rel)
+        files = files[:10]
     print('\n'.join(files))
 except Exception as e:
-    print('', end='')
-" 2>/dev/null)
+    pass
+PYEOF
+${TASK_FILE} ${REPO_ROOT} 2>/dev/null)
 
 REMAINING_TOKENS=$((MAX_TOKENS - TOTAL_TOKENS))
 echo 1>&2 "Осталось токенов для файлов: ~${REMAINING_TOKENS}"

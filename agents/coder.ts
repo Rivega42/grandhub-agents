@@ -516,6 +516,41 @@ export async function runCoder(taskFile: string, dryRun = false): Promise<boolea
           state.git_commits.push(hash);
           console.error(`[coder] 📦 Commit: ${hash}`);
           auditLog(task.task_id, { agent_role: 'coder', action: 'git_commit', details: { hash, message: commitMsg } });
+
+          // Создаём PR через gh CLI
+          try {
+            const wtRoot = path.dirname(worktreePath);
+            // Пушим ветку
+            spawnSync('git', ['push', 'origin', `agent/${task.task_id}`, '--force'], {
+              encoding: 'utf8', cwd: wtRoot,
+              env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+              timeout: 30000,
+            });
+            const issueRef = (task as any).github_issue?.number
+              ? `\n\nCloses #${(task as any).github_issue.number} (в grandhub-feedback)`
+              : '';
+            const prBody = `🤖 Автоматически создан GHA Coder агентом\n\n**Задача:** ${task.task_id}\n**Сервис:** ${task.service}\n\n${task.description.slice(0, 500)}${issueRef}`;
+            const pr = spawnSync('gh', ['pr', 'create',
+              '--title', commitMsg,
+              '--body', prBody,
+              '--base', 'main',
+              '--head', `agent/${task.task_id}`,
+            ], {
+              encoding: 'utf8', cwd: wtRoot,
+              env: { ...process.env, GH_TOKEN: process.env.GITHUB_TOKEN ?? '' },
+              timeout: 30000,
+            });
+            const prUrl = pr.stdout?.trim();
+            if (prUrl && prUrl.startsWith('https://')) {
+              state.git_commits.push(`PR: ${prUrl}`);
+              console.error(`[coder] 🔗 PR создан: ${prUrl}`);
+              auditLog(task.task_id, { agent_role: 'coder', action: 'pr_created', details: { url: prUrl } });
+            } else {
+              console.error('[coder] ⚠️  PR не создан:', (pr.stderr ?? '').slice(0, 100));
+            }
+          } catch (prErr) {
+            console.error('[coder] ⚠️  PR ошибка:', (prErr as Error).message);
+          }
         }
 
         state.status = 'review';

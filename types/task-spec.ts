@@ -220,6 +220,7 @@ export type AuditAction =
   | 'file_write'
   | 'eval_run'
   | 'git_commit'
+  | 'pr_created'
   | 'lock_acquire'
   | 'lock_release'
   | 'escalation'
