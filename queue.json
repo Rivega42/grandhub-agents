@@ -2,12 +2,11 @@
   {
     "task_id": "TASK-20260314-GH1",
     "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH1-spec.json",
-    "status": "done",
-    "added_at": "2026-03-14T05:55:55.158Z",
+    "status": "failed",
+    "added_at": "2026-03-14T06:25:27.611Z",
     "github_issue": 1,
-    "started_at": "2026-03-14T05:55:56.599Z",
-    "finished_at": "2026-03-14T05:58:43.726Z",
-    "result": "reviewer_rejected",
-    "score": 50
+    "started_at": "2026-03-14T06:25:28.915Z",
+    "finished_at": "2026-03-14T06:25:30.840Z",
+    "result": "escalated"
   }
 ]

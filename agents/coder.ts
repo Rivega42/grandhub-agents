@@ -292,6 +292,12 @@ export async function runCoder(taskFile: string, dryRun = false): Promise<boolea
     last_updated: new Date().toISOString(),
   };
 
+  // Если задача уже выполнена — не запускаем повторно
+  if (state.status === 'done' || state.status === 'review') {
+    console.error();
+    return true;
+  }
+
   if (dryRun) {
     console.log(JSON.stringify({ dry_run: true, task_id: task.task_id }, null, 2));
     return true;
