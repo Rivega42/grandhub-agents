@@ -644,6 +644,55 @@ export async function runCoder(taskFile: string, dryRun = false, reviewFeedbackF
           }
         }
 
+        // -- Tester: run tests before reviewer -------------------------
+        state.status = 'testing';
+        state.current_step = 'tester';
+        saveCheckpoint(state);
+
+        console.error(`\n[coder] \u{1f9ea} Running Tester for ${task.task_id}...`);
+        transitionPhase(task.task_id, 'testing');
+        log.info('Starting tester');
+
+        {
+          const testerScript = path.resolve(__dirname, 'tester.ts');
+          const serviceDir = task.service === 'grandhub-agents'
+            ? '/opt/grandhub-agents'
+            : path.join(CONFIG.repoRoot, 'services', task.service);
+          const testerResult = spawnSync(
+            'npx', ['ts-node', testerScript, '--task-id', task.task_id, '--service-path', serviceDir],
+            { cwd: '/opt/grandhub-agents', timeout: 180_000, encoding: 'utf8', env: process.env }
+          );
+          if (testerResult.status !== 0) {
+            console.error(`[coder] Tester failed (exit ${testerResult.status})`);
+            if (!task.allow_test_failure) {
+              console.error('[coder] allow_test_failure=false - passing errors to retry...');
+              let testerFeedback = 'Tests failed';
+              try {
+                const tf = JSON.parse(fs.readFileSync(path.join(CONFIG.stateDir, `${task.task_id}-tester.json`), 'utf8'));
+                if (tf.llm_analysis) {
+                  testerFeedback = `Root cause: ${tf.llm_analysis.root_cause}\nFix hints: ${(tf.llm_analysis.fix_hints ?? []).join('; ')}`;
+                }
+              } catch { /* ok */ }
+
+              if (state.retries < (task.max_retries ?? CONFIG.maxRetries)) {
+                state.errors = [{ file: 'tester', line: 0, message: testerFeedback }];
+                state.retries++;
+                state.status = 'running';
+                state.current_step = `attempt_${state.retries + 1}_test_fix`;
+                saveCheckpoint(state);
+                isFirstAttempt = false;
+                lastEvalResult = { task_id: task.task_id, service: task.service, passed: false, total_duration_ms: 0, timestamp: new Date().toISOString(), steps: [{ step: 'test' as const, passed: false, duration_ms: 0, timestamp: new Date().toISOString(), errors: [{ file: 'tester', line: 0, message: testerFeedback }] }] };
+                continue;
+              }
+              console.error('[coder] Retries exhausted, continuing to reviewer');
+            } else {
+              console.error('[coder] Tester failed (ignored: allow_test_failure=true)');
+            }
+          } else {
+            console.error(`[coder] Tester: tests passed`);
+          }
+        }
+
         state.status = 'review';
         state.current_step = 'reviewer';
         saveCheckpoint(state);

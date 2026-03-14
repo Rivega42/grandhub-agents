@@ -360,5 +360,25 @@
     "started_at": "2026-03-14T17:06:10.824Z",
     "finished_at": "2026-03-14T17:06:13.188Z",
     "result": "escalated"
+  },
+  {
+    "task_id": "TASK-20260314-GH36",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH36-spec.json",
+    "status": "done",
+    "added_at": "2026-03-14T17:41:55.659Z",
+    "github_issue": 36,
+    "started_at": "2026-03-14T17:41:55.692Z",
+    "finished_at": "2026-03-14T17:42:00.328Z",
+    "result": "success"
+  },
+  {
+    "task_id": "TASK-20260314-GH35",
+    "spec_file": "/opt/grandhub-agents/.agent-state/TASK-20260314-GH35-spec.json",
+    "status": "done",
+    "added_at": "2026-03-14T17:41:55.660Z",
+    "github_issue": 35,
+    "started_at": "2026-03-14T17:42:01.344Z",
+    "finished_at": "2026-03-14T17:42:06.568Z",
+    "result": "success"
   }
 ]

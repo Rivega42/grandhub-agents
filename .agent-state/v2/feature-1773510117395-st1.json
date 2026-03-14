@@ -1,0 +1,10 @@
+{
+  "task_id": "feature-1773510117395-st1",
+  "title": "feat(assistant-runtime): контекстная память пользователя — сохранять предпочтения",
+  "description": "GitHub Issue #36: feat(assistant-runtime): контекстная память пользователя — сохранять предпочтения\n\nДобавить сохранение пользовательских предпочтений в assistant-runtime.\n\nКогда пользователь явно говорит о предпочтениях (мне нравится X, я не люблю Y, запомни что...):\n1. Извлекать факты из сообщения\n2. Сохранять в таблицу user_memory: { userId, key, value, confidence, updatedAt }\n3. Подставлять топ-10 фактов в system prompt при каждом запросе\n\nТаблица user_memory:\n- userId text NOT NULL\n- key text (например: любимый_жанр, не_любит, профессия)\n- value text\n- confidence float DEFAULT 1.0\n- update",
+  "service": "assistant-runtime",
+  "type": "feature",
+  "file_scope": [],
+  "allow_test_failure": true,
+  "created_at": "2026-03-14T17:41:57.454Z"
+}

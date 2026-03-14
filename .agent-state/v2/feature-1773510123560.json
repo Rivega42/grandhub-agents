@@ -1,0 +1,20 @@
+{
+  "feature_id": "feature-1773510123560",
+  "title": "feat(telegram-bot): команда /recommend — рекомендации фильмов и книг",
+  "service": "telegram-bot",
+  "github_issue": 35,
+  "subtasks": [
+    {
+      "subtask": {
+        "id": "st-1",
+        "title": "feat(telegram-bot): команда /recommend — рекомендации фильмов и книг",
+        "description": "GitHub Issue #35: feat(telegram-bot): команда /recommend — рекомендации фильмов и книг\n\nДобавить команду /recommend в telegram-bot.\n\nФункционал:\n- Команда /recommend запускает скилл media-recommender\n- Бот спрашивает: «Что хочешь? Фильм / Книга / Музыка / Сериал» (inline кнопки)\n- После выбора — даёт 1-2 рекомендации с кнопками: «Буду смотреть 👍», «Не моё 👎», «Ещё вариант 🔄»\n- Если нажали «Буду смотреть» — сохранить в user_preferences (таблица или JSON в users)\n\nФайлы:\n- services/telegram-bot/src/commands/recommend.ts — новый файл\n- services/telegram-bot/src/bot.ts — зарегистрир",
+        "service": "telegram-bot",
+        "file_scope": []
+      },
+      "status": "failed"
+    }
+  ],
+  "started_at": "2026-03-14T17:42:03.600Z",
+  "finished_at": "2026-03-14T17:42:06.507Z"
+}

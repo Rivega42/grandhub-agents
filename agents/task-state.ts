@@ -8,7 +8,7 @@ import * as path from 'path';
 export type TaskPhase =
   | 'queued' | 'worktree_setup' | 'context' | 'coding'
   | 'eval_lint' | 'eval_typecheck' | 'eval_test'
-  | 'committing' | 'reviewing' | 'pr_creating'
+  | 'committing' | 'testing' | 'reviewing' | 'pr_creating'
   | 'completed' | 'failed' | 'escalated';
 
 export interface TaskState {
