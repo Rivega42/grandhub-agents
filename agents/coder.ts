@@ -383,6 +383,7 @@ export async function runCoder(taskFile: string, dryRun = false): Promise<boolea
 
     // 5. Основной цикл eval + fix
     let lastEvalResult: EvalLoopResult | null = null;
+    let isFirstAttempt = true;
 
     while (state.retries < (task.max_retries ?? CONFIG.maxRetries)) {
       state.current_step = `attempt_${state.retries + 1}`;
@@ -450,15 +451,52 @@ export async function runCoder(taskFile: string, dryRun = false): Promise<boolea
         }
 
         state.status = 'review';
-        state.current_step = 'done';
+        state.current_step = 'reviewer';
         saveCheckpoint(state);
 
-        console.error(`\n[coder] 🎉 Задача ${task.task_id} выполнена!`);
+        console.error(`\n[coder] 🎉 Задача ${task.task_id} выполнена! Запускаю Reviewer...`);
+
+        // Автозапуск Reviewer
+        try {
+          const reviewerScript = path.resolve(__dirname, '../run-reviewer.sh');
+          const reviewResult = spawnSync('bash', [reviewerScript, '--task-id', task.task_id], {
+            encoding: 'utf8', timeout: 120000,
+          });
+          const reviewJson = reviewResult.stdout ? JSON.parse(reviewResult.stdout) : null;
+          if (reviewJson) {
+            console.error(`[coder] 🔍 Reviewer: ${reviewJson.verdict.toUpperCase()} | Score: ${reviewJson.score}/100`);
+            if (reviewJson.verdict === 'reject' && state.retries < (task.max_retries ?? CONFIG.maxRetries)) {
+              console.error('[coder] ↩️  Reviewer отклонил — передаю фидбек в следующую попытку...');
+              const reviewIssues = reviewJson.issues
+                .map((i: {severity: string; file: string; message: string}) => `[${i.severity}] ${i.file}: ${i.message}`)
+                .join('\n');
+              state.errors = [{ file: 'reviewer', line: 0, message: reviewIssues }];
+              state.retries++;
+              state.status = 'running';
+              state.current_step = `attempt_${state.retries + 1}_reviewer_feedback`;
+              saveCheckpoint(state);
+              // Продолжаем цикл с фидбеком от reviewer (не выходим)
+              isFirstAttempt = false;
+              lastEvalResult = { task_id: task.task_id, service: task.service, passed: false, total_duration_ms: 0, timestamp: new Date().toISOString(), steps: [{ step: 'test' as const, passed: false, duration_ms: 0, timestamp: new Date().toISOString(), errors: [{ file: 'reviewer', line: 0, message: reviewIssues }] }] };
+              continue;
+            }
+            state.status = reviewJson.approved_for_merge ? 'done' : 'review';
+          } else {
+            console.error('[coder] ⚠️  Reviewer вернул пустой ответ');
+            state.status = 'done';
+          }
+        } catch (e) {
+          console.error('[coder] ⚠️  Reviewer упал:', (e as Error).message);
+          state.status = 'done';
+        }
+
+        state.current_step = 'done';
+        saveCheckpoint(state);
         return true;
       }
 
       // ❌ Eval провалился
-      const firstFailed = evalResult.steps.find(s => !s.passed);
+      const firstFailed = evalResult.steps.find(s => !s.passed && !(s.step === 'test' && task.allow_test_failure));
       const errorSummary = firstFailed?.errors[0]
         ? `[${firstFailed.step}] ${firstFailed.errors[0].file}:${firstFailed.errors[0].line} — ${firstFailed.errors[0].message}`
         : `${firstFailed?.step ?? 'unknown'} провалился`;

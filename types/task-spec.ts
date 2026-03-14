@@ -16,7 +16,8 @@ export type TaskStatus =
   | 'deploying'
   | 'done'
   | 'failed'
-  | 'escalated';
+  | 'escalated'
+  | 'running';
 
 export type AgentRole =
   | 'orchestrator'
@@ -82,6 +83,9 @@ export interface TaskSpec {
 
   /** Количество последовательных провалов до эскалации */
   escalation_threshold: number;
+
+  /** Если true — провал тестов не блокирует коммит (pre-existing failures) */
+  allow_test_failure?: boolean;
 
   /** Лимит бюджета на API вызовы в USD */
   cost_budget_usd: number;
