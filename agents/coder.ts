@@ -42,7 +42,7 @@ const CONFIG = {
   logsDir:      path.resolve(__dirname, '../.agent-logs'),
   repoStateDir: path.join(process.env.GRANDHUB_ROOT ?? '/opt/grandhub-v3', '.agent-state'),
   repoRoot:     process.env.GRANDHUB_ROOT ?? '/opt/grandhub-v3',
-  model:        'anthropic/claude-opus-4-5',
+  model:        'anthropic/claude-opus-4-6',
   openrouterKey: process.env.OPENROUTER_API_KEY ?? '',
   maxRetries:   3,
 } as const;
