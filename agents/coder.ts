@@ -25,6 +25,8 @@ import type {
   TaskSpec,
   CheckpointState,
   EvalLoopResult,
+  EvalResult,
+  EvalStep,
   EscalationReport,
   EscalationAttempt,
   AuditLogEntry,
@@ -418,11 +420,70 @@ export async function runCoder(taskFile: string, dryRun = false): Promise<boolea
       console.error('[coder] 🧪 Запуск eval loop...');
       let evalResult: EvalLoopResult;
       try {
-        evalResult = runScript<EvalLoopResult>(
-          'eval-loop.sh',
-          [task.service],
-          path.dirname(worktreePath) // запускаем из корня worktree
-        );
+        // Запускаем каждый шаг отдельно
+        const evalSteps: EvalResult[] = [];
+        let evalPassed = true;
+        const stepsToRun: EvalStep[] = ['lint', 'typecheck', 'test'];
+
+        for (const stepName of stepsToRun) {
+          const stepScript = path.join(CONFIG.scriptsDir, `${stepName}.sh`);
+          const stepStart = Date.now();
+          const stepRaw = spawnSync('bash', [stepScript, task.service], {
+            encoding: 'utf8',
+            cwd: path.dirname(worktreePath),
+            env: { ...process.env, GRANDHUB_ROOT: CONFIG.repoRoot },
+            timeout: 300000,
+          });
+
+          let stepSuccess = false;
+          let stepErrors: Array<{file: string; line?: number; message: string}> = [];
+          try {
+            const jqResult = spawnSync('jq', ['-c', '.'], {
+              input: stepRaw.stdout ?? '',
+              encoding: 'utf8',
+            });
+            const stepJson = JSON.parse(jqResult.stdout?.trim() ?? '{}');
+            stepSuccess = stepJson.success ?? false;
+            stepErrors = (stepJson.errors ?? []).slice(0, 5).map((e: any) =>
+              typeof e === 'string'
+                ? { file: '', line: 0, message: e.slice(0, 200) }
+                : { file: e.file ?? '', line: e.line, message: String(e.message ?? '').slice(0, 200) }
+            );
+          } catch {
+            stepSuccess = (stepRaw.status ?? 1) === 0;
+            if (!stepSuccess) stepErrors = [{ file: '', message: (stepRaw.stderr ?? '').slice(0, 200) }];
+          }
+
+          const stepResult: EvalResult = {
+            step: stepName,
+            passed: stepSuccess,
+            duration_ms: Date.now() - stepStart,
+            timestamp: new Date().toISOString(),
+            errors: stepErrors,
+          };
+          evalSteps.push(stepResult);
+
+          if (!stepSuccess) {
+            if (stepName === 'test' && task.allow_test_failure) {
+              console.error(`[coder] \u26a0\ufe0f  test failed - allow_test_failure, continuing`);
+            } else {
+              evalPassed = false;
+              console.error(`[coder] \u274c ${stepName} failed`);
+              break;
+            }
+          } else {
+            console.error(`[coder] \u2705 ${stepName} OK`);
+          }
+        }
+
+        evalResult = {
+          task_id: task.task_id,
+          service: task.service,
+          passed: evalPassed,
+          steps: evalSteps,
+          total_duration_ms: evalSteps.reduce((s, r) => s + r.duration_ms, 0),
+          timestamp: new Date().toISOString(),
+        };
       } catch (e) {
         evalResult = {
           task_id: task.task_id, service: task.service, passed: false,
@@ -435,7 +496,14 @@ export async function runCoder(taskFile: string, dryRun = false): Promise<boolea
       state.eval_results.push(evalResult as any);
       auditLog(task.task_id, { agent_role: 'coder', action: 'eval_run', details: { passed: evalResult.passed } });
 
-      if (evalResult.passed) {
+      // allow_test_failure: если только test провалился — считаем успехом
+      const criticalFailed = evalResult.steps.filter(s => {
+        if (!s.passed && s.step === 'test' && task.allow_test_failure) return false;
+        return !s.passed;
+      });
+      const effectivePassed = evalResult.passed || criticalFailed.length === 0;
+
+      if (effectivePassed) {
         // ✅ Успех — коммитим
         console.error('\n[coder] ✅ Eval loop прошёл! Коммичу...');
 

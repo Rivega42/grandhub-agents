@@ -31,11 +31,11 @@ TEST_SCRIPT=$(echo "$PACKAGE_JSON" | node -e "const p=JSON.parse(require('fs').r
 
 # Запускаем тесты
 if [ -n "$TEST_SCRIPT" ] && [ "$TEST_SCRIPT" != "echo \"Error: no test specified\" && exit 1" ]; then
-  TEST_OUTPUT=$(pnpm test --run 2>&1 || pnpm test 2>&1 || true)
+  TEST_OUTPUT=$(timeout 300 pnpm test --run 2>&1 || timeout 300 pnpm test 2>&1 || true)
 elif [ "$HAS_VITEST" = "yes" ]; then
-  TEST_OUTPUT=$(pnpm exec vitest run 2>&1 || true)
+  TEST_OUTPUT=$(timeout 300 pnpm exec vitest run 2>&1 || true)
 elif [ "$HAS_JEST" = "yes" ]; then
-  TEST_OUTPUT=$(pnpm exec jest --passWithNoTests 2>&1 || true)
+  TEST_OUTPUT=$(timeout 300 pnpm exec jest --passWithNoTests 2>&1 || true)
 else
   END_MS=$(date +%s%3N)
   DURATION=$((END_MS - START_MS))
