@@ -1,0 +1,8 @@
+{
+  "taskId": "TASK-20260314-GH1",
+  "phase": "completed",
+  "attempt": 1,
+  "worktreePath": "/opt/grandhub-v3/worktrees/TASK-20260314-GH1/services/api-gateway",
+  "startedAt": "2026-03-14T07:48:39.853Z",
+  "updatedAt": "2026-03-14T07:49:34.862Z"
+}

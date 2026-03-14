@@ -2,15 +2,15 @@
 Ты — Coder агент GrandHub. Твоя задача: реализовать код строго по TaskSpec.
 Работай только в пределах file_scope. Запускай eval-loop.sh после каждого изменения.
 \n# TASK SPEC\n{
-  "task_id": "TASK-20260314-GH1",
-  "title": "fix(api-gateway): OpenClaw дублирует сообщения в Telegram",
-  "description": "GitHub Issue #1: OpenClaw дублирует сообщения в Telegram\n\n## Проблема\nАссистент отправляет одно сообщение, но в Telegram оно появляется дважды. Потом одно удаляется.\n\n## Воспроизведение\nПроисходит несколько дней подряд, не на каждое сообщение.\n\n## Скриншот\nПриложен пользователем в чате.\n\n## Возможные причины\n- Баг в OpenClaw telegram adapter\n- Race condition при отправке\n- Retry логика срабатывает когда не нужно\n\n---\n*Создано ассистентом*",
+  "task_id": "TASK-20260314-GH2",
+  "title": "feat(api-gateway): feat(api-gateway): добавить /ready endpoint для health check",
+  "description": "GitHub Issue #2: feat(api-gateway): добавить /ready endpoint для health check\n\n## Задача\n\nДобавить endpoint GET /ready в сервис api-gateway.\n\n## Требования\n\n- Путь: GET /ready\n- Ответ: { \"status\": \"ok\", \"service\": \"api-gateway\", \"uptime\": <seconds> } (HTTP 200)\n- Подключить к существующему Express app в src/app.ts\n\n## Критерии приёмки\n\n1. Endpoint GET /ready возвращает JSON с полями status, service, uptime\n2. Uptime ��читается от старта процесса (process.uptime())\n3. TypeScript типизация, no any\n4. Lint и typecheck проходят чисто\n\n## service: api-gateway\n## type: feature\n#",
   "service": "api-gateway",
-  "type": "fix",
+  "type": "feat",
   "priority": "medium",
   "file_scope": [],
   "acceptance_criteria": [
-    "Проблема из issue #1 устранена",
+    "Проблема из issue #2 устранена",
     "typecheck проходит без ошибок",
     "lint проходит без ошибок"
   ],
@@ -21,8 +21,8 @@
   "cost_budget_usd": 2,
   "created_at": "2026-03-14T07:15:26.401Z",
   "github_issue": {
-    "number": 1,
-    "url": "https://github.com/Rivega42/grandhub-feedback/issues/1",
+    "number": 2,
+    "url": "https://github.com/Rivega42/grandhub-feedback/issues/2",
     "author": "Rivega42"
   }
 }\n\n# AGENT.md — api-gateway\n# AGENT.md — api-gateway (API Gateway)
