@@ -26,6 +26,7 @@ const CONFIG = {
   tgBotToken:  process.env.TELEGRAM_BOT_TOKEN ?? '',
   tgChatId:    process.env.TELEGRAM_CHAT_ID   ?? '357896330',
   watchIntervalMs: 30_000,
+  healthPort: Number(process.env.GHA_HEALTH_PORT ?? '9090'),
 } as const;
 
 // ─── Типы ─────────────────────────────────────────────────────────────────────
@@ -62,6 +63,89 @@ function tgSend(text: string): void {
 // ─── Глобальная очередь задач ──────────────────────────────────────────────────
 const taskQueue = new PQueue({ concurrency: 1 });
 let isShuttingDown = false;
+
+// ─── Метрики в памяти ─────────────────────────────────────────────────────────
+const metrics = {
+  startedAt: new Date().toISOString(),
+  tasksCompleted: 0,
+  tasksFailed: 0,
+  tasksEscalated: 0,
+  totalDurationMs: 0,
+  lastTaskId: '',
+  lastTaskAt: '',
+  currentTask: null as string | null,
+};
+
+// ─── Health HTTP Server ────────────────────────────────────────────────────────
+function startHealthServer(): void {
+  const server = http.createServer((req, res) => {
+    if (req.url === '/healthz' || req.url === '/health') {
+      const queue = (() => {
+        try { return JSON.parse(require('fs').readFileSync(CONFIG.queueFile, 'utf8')); }
+        catch { return []; }
+      })();
+      const pending   = queue.filter((e: { status: string }) => e.status === 'pending').length;
+      const running   = queue.filter((e: { status: string }) => e.status === 'running').length;
+      const done      = queue.filter((e: { status: string }) => e.status === 'done').length;
+      const failed    = queue.filter((e: { status: string }) => e.status === 'failed').length;
+      const avgMs = metrics.tasksCompleted > 0
+        ? Math.round(metrics.totalDurationMs / metrics.tasksCompleted)
+        : null;
+
+      const body = JSON.stringify({
+        status: isShuttingDown ? 'shutting_down' : 'ok',
+        uptime: Math.round((Date.now() - new Date(metrics.startedAt).getTime()) / 1000),
+        startedAt: metrics.startedAt,
+        queue: { pending, running, done, failed },
+        tasks: {
+          completed: metrics.tasksCompleted,
+          failed: metrics.tasksFailed,
+          escalated: metrics.tasksEscalated,
+          avgDurationMs: avgMs,
+        },
+        current: metrics.currentTask,
+        lastTask: { id: metrics.lastTaskId, at: metrics.lastTaskAt },
+        watchdog: {
+          queueConcurrency: taskQueue.concurrency,
+          queueSize: taskQueue.size,
+          queuePending: taskQueue.pending,
+        },
+      }, null, 2);
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(body);
+    } else if (req.url === '/metrics') {
+      // Prometheus text format
+      const lines = [
+        `# HELP gha_tasks_completed Total completed tasks`,
+        `# TYPE gha_tasks_completed counter`,
+        `gha_tasks_completed ${metrics.tasksCompleted}`,
+        `# HELP gha_tasks_failed Total failed tasks`,
+        `# TYPE gha_tasks_failed counter`,
+        `gha_tasks_failed ${metrics.tasksFailed}`,
+        `# HELP gha_task_avg_duration_ms Average task duration in ms`,
+        `# TYPE gha_task_avg_duration_ms gauge`,
+        `gha_task_avg_duration_ms ${metrics.tasksCompleted > 0 ? Math.round(metrics.totalDurationMs / metrics.tasksCompleted) : 0}`,
+        `# HELP gha_queue_pending Pending tasks in queue`,
+        `# TYPE gha_queue_pending gauge`,
+        `gha_queue_pending ${taskQueue.size}`,
+      ].join('\n');
+      res.writeHead(200, { 'Content-Type': 'text/plain; version=0.0.4' });
+      res.end(lines + '\n');
+    } else {
+      res.writeHead(404);
+      res.end('Not found');
+    }
+  });
+
+  server.listen(CONFIG.healthPort, '127.0.0.1', () => {
+    console.error(`[orchestrator] 🩺 Health: http://127.0.0.1:${CONFIG.healthPort}/healthz`);
+  });
+
+  server.on('error', (err) => {
+    console.error('[orchestrator] Health server error:', err.message);
+  });
+}
 
 // ─── Нотификация через файл (OpenClaw heartbeat подхватит) ────────────────────
 const COMPLETED_FILE = path.join(CONFIG.stateDir, 'completed-tasks.json');
@@ -138,6 +222,7 @@ async function runTask(entry: QueueEntry, queue: QueueEntry[]): Promise<void> {
   try { title = JSON.parse(fs.readFileSync(entry.spec_file, 'utf8')).title ?? title; } catch { /* ok */ }
 
   console.error(`\n[orchestrator] 🚀 Запуск: ${entry.task_id} — ${title}`);
+  metrics.currentTask = entry.task_id;
 
   const coderScript = path.join(CONFIG.scriptDir, 'run-coder.sh');
 
@@ -188,6 +273,13 @@ async function runTask(entry: QueueEntry, queue: QueueEntry[]): Promise<void> {
       queue[idx].result = 'success';
       queue[idx].score = reviewScore;
       console.error(`[orchestrator] ✅ ${entry.task_id} — DONE (score: ${reviewScore})`);
+      metrics.tasksCompleted++;
+      metrics.totalDurationMs += queue[idx].finished_at && queue[idx].started_at
+        ? new Date(queue[idx].finished_at!).getTime() - new Date(queue[idx].started_at!).getTime()
+        : 0;
+      metrics.lastTaskId = entry.task_id;
+      metrics.lastTaskAt = new Date().toISOString();
+      metrics.currentTask = null;
       // Достаём PR url из checkpoint
       let prUrl: string | undefined;
       try {
@@ -221,6 +313,11 @@ async function runTask(entry: QueueEntry, queue: QueueEntry[]): Promise<void> {
     queue[idx].status = 'failed';
     queue[idx].result = isEscalated ? 'escalated' : 'escalated';
     console.error(`[orchestrator] ❌ ${entry.task_id} — FAILED${isEscalated ? ' (escalated)' : ''}`);
+    metrics.tasksFailed++;
+    if (isEscalated) metrics.tasksEscalated++;
+    metrics.lastTaskId = entry.task_id;
+    metrics.lastTaskAt = new Date().toISOString();
+    metrics.currentTask = null;
 
     let lastError = '';
     if (isEscalated) {
@@ -288,6 +385,7 @@ function startWatchdog(): void {
 async function watchMode(): Promise<void> {
   console.error(`[orchestrator] 👀 Watch режим — проверяю каждые ${CONFIG.watchIntervalMs / 1000}с`);
   console.error('[orchestrator] 🤖 GHA Orchestrator запущен (watch режим)');
+  startHealthServer();
   startWatchdog();
 
   // Crash recovery: незавершённые задачи из предыдущего запуска
