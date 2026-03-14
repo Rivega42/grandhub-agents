@@ -11,7 +11,8 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { spawnSync, spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
+import PQueue from 'p-queue';
 import * as https from 'https';
 import * as http from 'http';
 
@@ -58,6 +59,10 @@ function tgSend(text: string): void {
     else console.error('[orchestrator] Telegram ERR:', resp.description);
   } catch { console.error('[orchestrator] Telegram raw:', (r.stdout ?? '').slice(0, 80)); }
 }
+// ─── Глобальная очередь задач ──────────────────────────────────────────────────
+const taskQueue = new PQueue({ concurrency: 1 });
+let isShuttingDown = false;
+
 // ─── Нотификация через файл (OpenClaw heartbeat подхватит) ────────────────────
 const COMPLETED_FILE = path.join(CONFIG.stateDir, 'completed-tasks.json');
 
@@ -120,7 +125,7 @@ function pendingTasks(queue: QueueEntry[]): QueueEntry[] {
 
 // ─── Запуск задачи ────────────────────────────────────────────────────────────
 
-function runTask(entry: QueueEntry, queue: QueueEntry[]): void {
+async function runTask(entry: QueueEntry, queue: QueueEntry[]): Promise<void> {
   const idx = queue.findIndex(e => e.task_id === entry.task_id);
   if (idx === -1) return;
 
@@ -133,14 +138,35 @@ function runTask(entry: QueueEntry, queue: QueueEntry[]): void {
   try { title = JSON.parse(fs.readFileSync(entry.spec_file, 'utf8')).title ?? title; } catch { /* ok */ }
 
   console.error(`\n[orchestrator] 🚀 Запуск: ${entry.task_id} — ${title}`);
-  console.error(`[orchestrator] 🚀 Запуск: ${entry.task_id} — ${title}`);
 
   const coderScript = path.join(CONFIG.scriptDir, 'run-coder.sh');
-  const result = spawnSync('bash', [coderScript, '--task-file', entry.spec_file], {
-    encoding: 'utf8',
-    timeout: 30 * 60 * 1000, // 30 минут максимум
-    stdio: ['ignore', 'pipe', 'pipe'],
+
+  // Async spawn — не блокирует event loop
+  const { exitCode, stderr: stderrOut } = await new Promise<{ exitCode: number; stderr: string }>((resolve) => {
+    const stderrChunks: Buffer[] = [];
+    const child = spawn('bash', [coderScript, '--task-file', entry.spec_file], {
+      stdio: ['ignore', 'inherit', 'pipe'], // stdout → terminal, stderr → capture
+      timeout: 30 * 60 * 1000,
+    });
+
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderrChunks.push(chunk);
+      process.stderr.write(chunk); // тоже в systemd journal
+    });
+
+    child.on('exit', (code) => resolve({ exitCode: code ?? 1, stderr: Buffer.concat(stderrChunks).toString('utf8') }));
+    child.on('error', (err) => resolve({ exitCode: 1, stderr: err.message }));
   });
+
+  // Логируем stderr в файл
+  fs.mkdirSync(CONFIG.logsDir, { recursive: true });
+  fs.appendFileSync(
+    path.join(CONFIG.logsDir, `${entry.task_id}.log`),
+    `\n=== Orchestrator run ${new Date().toISOString()} ===\n${stderrOut}`
+  );
+
+  // Переопределяем result для совместимости
+  const result = { status: exitCode };
 
   queue[idx].finished_at = new Date().toISOString();
 
@@ -214,12 +240,6 @@ function runTask(entry: QueueEntry, queue: QueueEntry[]): void {
   }
 
   saveQueue(queue);
-  // Логируем stderr в файл
-  fs.mkdirSync(CONFIG.logsDir, { recursive: true });
-  fs.appendFileSync(
-    path.join(CONFIG.logsDir, `${entry.task_id}.log`),
-    `\n=== Orchestrator run ${new Date().toISOString()} ===\n${result.stderr ?? ''}`
-  );
 }
 
 // ─── Основной цикл ────────────────────────────────────────────────────────────
@@ -236,7 +256,7 @@ async function runOnce(): Promise<void> {
   console.error(`[orchestrator] В очереди: ${pending.length} задач`);
 
   for (const entry of pending) {
-    runTask(entry, queue);
+    await runTask(entry, queue);
   }
 
   console.error('[orchestrator] Все задачи обработаны.');
@@ -297,16 +317,42 @@ async function watchMode(): Promise<void> {
     console.error('[orchestrator] ⚠️  Crash recovery failed:', (e as Error).message);
   }
 
-  const tick = async () => {
+  const tick = (): void => {
+    if (isShuttingDown) return;
     const queue = loadQueue();
     const pending = pendingTasks(queue);
     if (pending.length > 0) {
       console.error(`[orchestrator] Новых задач: ${pending.length}`);
       for (const entry of pending) {
-        runTask(entry, queue);
+        // p-queue: не добавляем если уже в очереди или running
+        const fresh = loadQueue();
+        const current = fresh.find(e => e.task_id === entry.task_id);
+        if (current?.status === 'running') continue;
+        const capturedEntry = { ...entry };
+        taskQueue.add(async () => {
+          const q = loadQueue();
+          await runTask(capturedEntry, q);
+        }).catch(err =>
+          console.error(`[orchestrator] Task error ${capturedEntry.task_id}: ${err.message}`)
+        );
       }
     }
   };
+
+  // Обрабатываем SIGTERM gracefully
+  const shutdown = async (signal: string): Promise<void> => {
+    console.error(`[orchestrator] ${signal} получен — graceful shutdown...`);
+    isShuttingDown = true;
+    if (taskQueue.size > 0 || taskQueue.pending > 0) {
+      console.error(`[orchestrator] Жду завершения текущей задачи...`);
+      await taskQueue.onIdle();
+    }
+    console.error('[orchestrator] Все задачи завершены. Выхожу.');
+    process.exit(0);
+  };
+
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
+  process.on('SIGINT',  () => void shutdown('SIGINT'));
 
   await tick();
   setInterval(tick, CONFIG.watchIntervalMs);
