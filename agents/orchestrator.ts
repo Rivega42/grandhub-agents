@@ -28,6 +28,7 @@ const CONFIG = {
   watchIntervalMs: 30_000,
   healthPort: Number(process.env.GHA_HEALTH_PORT ?? '9090'),
   repoRoot: process.env.GRANDHUB_ROOT ?? '/opt/grandhub-v3',
+  dlqFile: path.resolve(__dirname, '../.agent-state/dlq.json'),
 } as const;
 
 // ─── Типы ─────────────────────────────────────────────────────────────────────
@@ -63,6 +64,102 @@ function tgSend(text: string): void {
     else console.error('[orchestrator] Telegram ERR:', resp.description);
   } catch { console.error('[orchestrator] Telegram raw:', (r.stdout ?? '').slice(0, 80)); }
 }
+// ─── Dead Letter Queue ────────────────────────────────────────────────────────
+interface DLQEntry {
+  task_id: string;
+  spec_file: string;
+  github_issue?: number;
+  reason: 'escalated' | 'reviewer_rejected' | 'failed';
+  error?: string;
+  review_score?: number;
+  failed_at: string;
+  retry_count: number;   // сколько раз уже пробовали через DLQ
+}
+
+function loadDLQ(): DLQEntry[] {
+  if (!fs.existsSync(CONFIG.dlqFile)) return [];
+  try { return JSON.parse(fs.readFileSync(CONFIG.dlqFile, 'utf8')); }
+  catch { return []; }
+}
+
+function saveDLQ(dlq: DLQEntry[]): void {
+  fs.mkdirSync(path.dirname(CONFIG.dlqFile), { recursive: true });
+  fs.writeFileSync(CONFIG.dlqFile, JSON.stringify(dlq, null, 2));
+}
+
+function addToDLQ(entry: QueueEntry, reason: DLQEntry['reason'], error?: string, score?: number): void {
+  const dlq = loadDLQ();
+  // Не добавляем дубликаты
+  if (dlq.find(d => d.task_id === entry.task_id)) return;
+
+  const dlqEntry: DLQEntry = {
+    task_id: entry.task_id,
+    spec_file: entry.spec_file,
+    github_issue: (entry as any).github_issue,
+    reason,
+    error: error?.slice(0, 500),
+    review_score: score,
+    failed_at: new Date().toISOString(),
+    retry_count: 0,
+  };
+  dlq.push(dlqEntry);
+  saveDLQ(dlq);
+
+  console.error(`[dlq] 📥 ${entry.task_id} → DLQ (reason: ${reason}${score ? `, score: ${score}` : ''})`);
+
+  // Telegram уведомление
+  tgSend(
+    `📥 <b>DLQ: задача не выполнена</b>\n` +
+    `<b>ID:</b> <code>${entry.task_id}</code>\n` +
+    `<b>Причина:</b> ${reason}${score ? ` (score: ${score}/100)` : ''}\n` +
+    (error ? `<b>Ошибка:</b> <code>${error.slice(0, 200)}</code>\n` : '') +
+    `\n<i>Используй /dlq-list для просмотра и /dlq-retry ${entry.task_id} для повтора</i>`
+  );
+}
+
+// Retry задачи из DLQ — возвращает в очередь
+function retryFromDLQ(taskId: string): boolean {
+  const dlq = loadDLQ();
+  const idx = dlq.findIndex(d => d.task_id === taskId);
+  if (idx === -1) {
+    console.error(`[dlq] Задача ${taskId} не найдена в DLQ`);
+    return false;
+  }
+  const entry = dlq[idx];
+  if (!fs.existsSync(entry.spec_file)) {
+    console.error(`[dlq] Spec файл не найден: ${entry.spec_file}`);
+    return false;
+  }
+
+  // Удаляем из DLQ и возвращаем в queue
+  dlq[idx].retry_count += 1;
+  dlq.splice(idx, 1);
+  saveDLQ(dlq);
+
+  // Чистим старый checkpoint чтобы начать заново
+  const cpFile = path.join(CONFIG.stateDir, `${taskId}.json`);
+  if (fs.existsSync(cpFile)) fs.unlinkSync(cpFile);
+  const reviewFile = path.join(CONFIG.stateDir, `${taskId}-review.json`);
+  if (fs.existsSync(reviewFile)) fs.unlinkSync(reviewFile);
+  const fbFile = path.join(CONFIG.stateDir, `${taskId}-reviewer-feedback.json`);
+  if (fs.existsSync(fbFile)) fs.unlinkSync(fbFile);
+
+  const queue = loadQueue();
+  // Убираем из очереди если там ещё есть
+  const filtered = queue.filter(e => e.task_id !== taskId);
+  filtered.push({
+    task_id: taskId,
+    spec_file: entry.spec_file,
+    status: 'pending',
+    added_at: new Date().toISOString(),
+    ...(entry.github_issue ? { github_issue: entry.github_issue } : {}),
+  } as QueueEntry);
+  saveQueue(filtered);
+
+  console.error(`[dlq] 🔁 ${taskId} возвращена в очередь (retry #${entry.retry_count + 1})`);
+  return true;
+}
+
 // ─── Глобальная очередь задач ──────────────────────────────────────────────────
 const taskQueue = new PQueue({ concurrency: 1 });
 let isShuttingDown = false;
@@ -110,6 +207,7 @@ function startHealthServer(): void {
         ? Math.round(metrics.totalDurationMs / metrics.tasksCompleted)
         : null;
 
+      const dlq = loadDLQ();
       const body = JSON.stringify({
         status: isShuttingDown ? 'shutting_down' : 'ok',
         uptime: Math.round((Date.now() - new Date(metrics.startedAt).getTime()) / 1000),
@@ -123,6 +221,7 @@ function startHealthServer(): void {
         },
         current: metrics.currentTask,
         lastTask: { id: metrics.lastTaskId, at: metrics.lastTaskAt },
+        dlq: { count: dlq.length, items: dlq.map(d => ({ id: d.task_id, reason: d.reason, score: d.review_score, at: d.failed_at })) },
         watchdog: {
           queueConcurrency: taskQueue.concurrency,
           queueSize: taskQueue.size,
@@ -397,6 +496,7 @@ async function runTask(entry: QueueEntry, queue: QueueEntry[]): Promise<void> {
       console.error(`[orchestrator] ⚠️ ${entry.task_id} — REJECT (исчерпаны попытки, score: ${reviewScore})`);
       notifyCompletion(entry, 'review', { score: reviewScore, verdict: reviewVerdict });
       ghComment((entry as any).github_issue, `⚠️ **Reviewer отклонил после ${prevAttempts + 1} попыток** (score: ${reviewScore}/100)\n\n**Задача:** ${entry.task_id}\n\nНужно ручное вмешательство.`);
+      addToDLQ(entry, 'reviewer_rejected', `Reviewer verdict: ${reviewVerdict}`, reviewScore);
     }
   } else {
     // Проверяем escalation
@@ -419,6 +519,7 @@ async function runTask(entry: QueueEntry, queue: QueueEntry[]): Promise<void> {
     }
 
     notifyCompletion(entry, 'failed', { error: lastError?.slice(0, 300) });
+    addToDLQ(entry, isEscalated ? 'escalated' : 'failed', lastError?.slice(0, 300));
     // Cleanup мусорного worktree
     cleanupWorktree(entry.task_id);
     // Комментарий в issue
@@ -613,7 +714,48 @@ async function watchMode(): Promise<void> {
 // ─── CLI ──────────────────────────────────────────────────────────────────────
 
 if (require.main === module) {
-  const watch = process.argv.includes('--watch');
+  const args = process.argv.slice(2);
+  const watch = args.includes('--watch');
+  const dlqList = args.includes('--dlq-list');
+  const dlqRetryIdx = args.indexOf('--dlq-retry');
+  const dlqClearIdx = args.indexOf('--dlq-clear');
+
+  if (dlqList) {
+    const dlq = loadDLQ();
+    if (dlq.length === 0) { console.log('DLQ пуст. 🎉'); process.exit(0); }
+    console.log(`\n📥 DLQ (${dlq.length} задач):\n`);
+    dlq.forEach((d, i) => {
+      console.log(`${i+1}. ${d.task_id}`);
+      console.log(`   Причина: ${d.reason}${d.review_score ? ` (score: ${d.review_score}/100)` : ''}`);
+      console.log(`   Упала: ${d.failed_at}`);
+      console.log(`   Retries: ${d.retry_count}`);
+      if (d.error) console.log(`   Ошибка: ${d.error.slice(0, 100)}`);
+      console.log();
+    });
+    process.exit(0);
+  }
+
+  if (dlqRetryIdx !== -1) {
+    const taskId = args[dlqRetryIdx + 1];
+    if (!taskId) { console.error('Использование: --dlq-retry <task_id>'); process.exit(1); }
+    const ok = retryFromDLQ(taskId);
+    console.log(ok ? `✅ ${taskId} возвращена в очередь` : `❌ Не удалось`);
+    process.exit(ok ? 0 : 1);
+  }
+
+  if (dlqClearIdx !== -1) {
+    const taskId = args[dlqClearIdx + 1];
+    if (taskId) {
+      const dlq = loadDLQ().filter(d => d.task_id !== taskId);
+      saveDLQ(dlq);
+      console.log(`✅ ${taskId} удалена из DLQ`);
+    } else {
+      saveDLQ([]);
+      console.log('✅ DLQ очищен');
+    }
+    process.exit(0);
+  }
+
   if (watch) {
     watchMode().catch(err => { console.error('[orchestrator] FATAL:', err.message); process.exit(1); });
   } else {
