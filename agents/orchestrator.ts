@@ -58,6 +58,30 @@ function tgSend(text: string): void {
     else console.error('[orchestrator] Telegram ERR:', resp.description);
   } catch { console.error('[orchestrator] Telegram raw:', (r.stdout ?? '').slice(0, 80)); }
 }
+// ─── Нотификация через файл (OpenClaw heartbeat подхватит) ────────────────────
+const COMPLETED_FILE = path.join(CONFIG.stateDir, 'completed-tasks.json');
+
+function notifyCompletion(entry: QueueEntry, status: 'done' | 'failed' | 'review', details: {
+  score?: number; verdict?: string; error?: string; pr_url?: string;
+}): void {
+  // Записываем результат в файл — OpenClaw heartbeat прочитает и сообщит Роману
+  let pending: any[] = [];
+  if (fs.existsSync(COMPLETED_FILE)) {
+    try { pending = JSON.parse(fs.readFileSync(COMPLETED_FILE, 'utf8')); } catch { pending = []; }
+  }
+  pending.push({
+    task_id: entry.task_id,
+    title: (entry as any).title ?? entry.task_id,
+    status,
+    timestamp: new Date().toISOString(),
+    notified: false,
+    ...details,
+  });
+  fs.writeFileSync(COMPLETED_FILE, JSON.stringify(pending, null, 2));
+  console.error(`[orchestrator] 📝 Completion written → ${COMPLETED_FILE}`);
+}
+
+
 
 // ─── Очередь ──────────────────────────────────────────────────────────────────
 
@@ -90,7 +114,7 @@ function runTask(entry: QueueEntry, queue: QueueEntry[]): void {
   try { title = JSON.parse(fs.readFileSync(entry.spec_file, 'utf8')).title ?? title; } catch { /* ok */ }
 
   console.error(`\n[orchestrator] 🚀 Запуск: ${entry.task_id} — ${title}`);
-  tgSend(`🤖 <b>GHA Coder запущен</b>\n📋 ${entry.task_id}\n📝 ${title}`);
+  console.error(`[orchestrator] 🚀 Запуск: ${entry.task_id} — ${title}`);
 
   const coderScript = path.join(CONFIG.scriptDir, 'run-coder.sh');
   const result = spawnSync('bash', [coderScript, '--task-file', entry.spec_file], {
@@ -119,13 +143,13 @@ function runTask(entry: QueueEntry, queue: QueueEntry[]): void {
       queue[idx].result = 'success';
       queue[idx].score = reviewScore;
       console.error(`[orchestrator] ✅ ${entry.task_id} — DONE (score: ${reviewScore})`);
-      tgSend(`✅ <b>GHA задача выполнена</b>\n📋 ${entry.task_id}\n📝 ${title}\n⭐ Score: ${reviewScore}/100\n🔍 Reviewer: одобрено`);
+      notifyCompletion(entry, 'done', { score: reviewScore, verdict: 'approved' });
     } else {
       queue[idx].status = 'done';
       queue[idx].result = 'reviewer_rejected';
       queue[idx].score = reviewScore;
       console.error(`[orchestrator] ⚠️ ${entry.task_id} — done, reviewer: ${reviewVerdict} (score: ${reviewScore})`);
-      tgSend(`⚠️ <b>GHA задача завершена</b> (требует ревью)\n📋 ${entry.task_id}\n📝 ${title}\n⭐ Score: ${reviewScore}/100\n🔍 Reviewer: ${reviewVerdict}`);
+      notifyCompletion(entry, 'review', { score: reviewScore, verdict: reviewVerdict });
     }
   } else {
     // Проверяем escalation
@@ -141,7 +165,7 @@ function runTask(entry: QueueEntry, queue: QueueEntry[]): void {
       try { lastError = JSON.parse(fs.readFileSync(escalFile, 'utf8')).last_error ?? ''; } catch { /* ok */ }
     }
 
-    tgSend(`❌ <b>GHA задача провалена</b>\n📋 ${entry.task_id}\n📝 ${title}${lastError ? `\n🔴 ${lastError.slice(0, 200)}` : ''}\n\nНужно ручное вмешательство.`);
+    notifyCompletion(entry, 'failed', { error: lastError?.slice(0, 300) });
   }
 
   saveQueue(queue);
@@ -175,7 +199,7 @@ async function runOnce(): Promise<void> {
 
 async function watchMode(): Promise<void> {
   console.error(`[orchestrator] 👀 Watch режим — проверяю каждые ${CONFIG.watchIntervalMs / 1000}с`);
-  tgSend('🤖 <b>GHA Orchestrator запущен</b> (watch режим)');
+  console.error('[orchestrator] 🤖 GHA Orchestrator запущен (watch режим)');
 
   const tick = async () => {
     const queue = loadQueue();
